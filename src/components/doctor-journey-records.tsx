@@ -8,7 +8,7 @@ import type { JourneyModuleResponse } from "@/lib/types";
 type Period = "30" | "90" | "all";
 
 export function DoctorJourneyRecords() {
-  const plan = useJournal((s) => s.journeyPlan);
+  const plan = useJournal((s) => s.publishedJourneyPlan);
   const responses = useJournal((s) => s.journeyResponses);
   const patientName = useJournal((s) => s.patientName);
   const [period, setPeriod] = useState<Period>("30");
