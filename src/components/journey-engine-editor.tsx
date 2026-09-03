@@ -473,6 +473,7 @@ function ModuleEditor({
         <QuestionEditor
           key={question.id}
           question={question}
+          questions={module.questions}
           onChange={(patch) =>
             onChange({
               questions: module.questions.map((item) =>
@@ -493,15 +494,22 @@ function ModuleEditor({
 
 function QuestionEditor({
   question,
+  questions,
   onChange,
   onRemove,
 }: {
   question: JourneyQuestion;
+  questions: JourneyQuestion[];
   onChange: (patch: Partial<JourneyQuestion>) => void;
   onRemove: () => void;
 }) {
+  const controlQuestion = questions.find(
+    (item) => item.id === question.condition?.questionId,
+  );
+  const currentIndex = questions.findIndex((item) => item.id === question.id);
+  const possibleControls = currentIndex > 0 ? questions.slice(0, currentIndex) : [];
   return (
-    <div className="grid gap-2 rounded-lg bg-secondary/40 p-3 sm:grid-cols-[1fr_180px_auto]">
+    <div className="grid gap-3 rounded-lg bg-secondary/40 p-3 sm:grid-cols-[1fr_180px_auto]">
       <Input
         value={question.label}
         placeholder="Pergunta para o paciente"
@@ -521,6 +529,54 @@ function QuestionEditor({
       <Button type="button" variant="ghost" onClick={onRemove}>
         Remover
       </Button>
+      <div className="flex items-center gap-2 sm:col-span-3">
+        <button
+          type="button"
+          className={
+            question.required
+              ? "rounded-md bg-primary px-3 py-2 text-xs text-primary-foreground"
+              : "rounded-md bg-secondary px-3 py-2 text-xs"
+          }
+          onClick={() => onChange({ required: !question.required })}
+        >
+          {question.required ? "Obrigatória" : "Opcional"}
+        </button>
+      </div>
+
+      {(question.type === "scale" ||
+        question.type === "number" ||
+        question.type === "duration") && (
+        <div className="grid gap-2 sm:col-span-3 sm:grid-cols-3">
+          <Field label="Mínimo">
+            <Input
+              type="number"
+              value={question.min ?? ""}
+              onChange={(e) =>
+                onChange({ min: e.target.value === "" ? undefined : Number(e.target.value) })
+              }
+            />
+          </Field>
+          <Field label="Máximo">
+            <Input
+              type="number"
+              value={question.max ?? ""}
+              onChange={(e) =>
+                onChange({ max: e.target.value === "" ? undefined : Number(e.target.value) })
+              }
+            />
+          </Field>
+          <Field label="Passo">
+            <Input
+              type="number"
+              value={question.step ?? ""}
+              onChange={(e) =>
+                onChange({ step: e.target.value === "" ? undefined : Number(e.target.value) })
+              }
+            />
+          </Field>
+        </div>
+      )}
+
       {(question.type === "single_choice" ||
         question.type === "multiple_choice" ||
         question.type === "emotion") && (
@@ -544,7 +600,131 @@ function QuestionEditor({
           />
         </div>
       )}
+
+      {possibleControls.length > 0 && (
+        <div className="space-y-2 border-t border-border/60 pt-3 sm:col-span-3">
+          <Label className="text-xs">Regra de exibição</Label>
+          <select
+            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            value={question.condition?.questionId ?? ""}
+            onChange={(e) =>
+              onChange({
+                condition: e.target.value
+                  ? {
+                      questionId: e.target.value,
+                      operator: "equals",
+                      value: "",
+                    }
+                  : undefined,
+              })
+            }
+          >
+            <option value="">Sempre mostrar</option>
+            {possibleControls.map((item) => (
+              <option key={item.id} value={item.id}>
+                Mostrar dependendo de: {item.label || "Pergunta sem título"}
+              </option>
+            ))}
+          </select>
+
+          {question.condition && controlQuestion && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <select
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                value={question.condition.operator}
+                onChange={(e) =>
+                  onChange({
+                    condition: {
+                      ...question.condition!,
+                      operator: e.target.value as "equals" | "not_equals" | "includes",
+                    },
+                  })
+                }
+              >
+                <option value="equals">é igual a</option>
+                <option value="not_equals">é diferente de</option>
+                <option value="includes">contém</option>
+              </select>
+              <ConditionValueEditor
+                control={controlQuestion}
+                value={question.condition.value}
+                onChange={(value) =>
+                  onChange({
+                    condition: {
+                      ...question.condition!,
+                      value,
+                    },
+                  })
+                }
+              />
+            </div>
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+function ConditionValueEditor({
+  control,
+  value,
+  onChange,
+}: {
+  control: JourneyQuestion;
+  value: string | number | boolean;
+  onChange: (value: string | number | boolean) => void;
+}) {
+  if (control.type === "boolean" || control.type === "event") {
+    return (
+      <select
+        className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+        value={String(value)}
+        onChange={(e) => onChange(e.target.value === "true")}
+      >
+        <option value="">Escolha</option>
+        <option value="true">Sim</option>
+        <option value="false">Não</option>
+      </select>
+    );
+  }
+
+  if (
+    control.type === "single_choice" ||
+    control.type === "emotion" ||
+    control.type === "multiple_choice"
+  ) {
+    return (
+      <select
+        className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+        value={String(value)}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">Escolha uma opção</option>
+        {(control.options ?? []).map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  if (
+    control.type === "scale" ||
+    control.type === "number" ||
+    control.type === "duration"
+  ) {
+    return (
+      <Input
+        type="number"
+        value={typeof value === "number" ? value : ""}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+    );
+  }
+
+  return (
+    <Input value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} />
   );
 }
 

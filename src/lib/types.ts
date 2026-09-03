@@ -214,6 +214,17 @@ export type JourneyVersionSummary = {
   publishedAt: string;
 };
 
+export type JourneyAnswerValue = string | number | boolean | string[] | null;
+
+export type JourneyModuleResponse = {
+  id: string;
+  moduleId: string;
+  occurredOn: string;
+  answers: Record<string, JourneyAnswerValue>;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type MonthNotes = {
   worstSymptom?: string;
   walkFeeling?: string;
@@ -234,6 +245,7 @@ export type JournalSnapshot = {
   plan: PlanConfig;
   journeyPlan: JourneyPlanV2;
   journeyMeta: JourneyMeta;
+  journeyResponses: JourneyModuleResponse[];
 };
 
 export type Role = "patient" | "doctor";

@@ -37,6 +37,7 @@ export const APP_MANIFEST = {
 
 export const APP_MANIFEST_BODY = `${JSON.stringify(APP_MANIFEST, null, 2)}\n`;
 
+/** @param {unknown} pathname */
 export function isAppManifestPath(pathname) {
   const path = String(pathname ?? "").split("?")[0];
   return (

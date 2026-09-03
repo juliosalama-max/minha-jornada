@@ -10,7 +10,10 @@ import type {
   DayLog,
   DoctorNotice,
   JournalSnapshot,
+  JourneyAnswerValue,
   JourneyMeta,
+  JourneyModule,
+  JourneyModuleResponse,
   JourneyPlanV2,
   MedicalConsult,
   MonthNotes,
@@ -29,6 +32,7 @@ import {
   normalizeJourneyPlan,
   withLegacyPlan,
 } from "@/lib/journey-plan";
+import { moduleIsDue, responseMatchesPeriod } from "@/lib/journey-schedule";
 
 type JourneyRow = {
   id: string;
@@ -82,6 +86,102 @@ function journeyMeta(row: JourneyRow): JourneyMeta {
   };
 }
 
+function questionConditionMatches(
+  condition: JourneyModule["questions"][number]["condition"],
+  answers: Record<string, JourneyAnswerValue>,
+): boolean {
+  if (!condition) return true;
+  const current = answers[condition.questionId];
+  if (condition.operator === "equals") return current === condition.value;
+  if (condition.operator === "not_equals") {
+    return current !== undefined && current !== condition.value;
+  }
+  if (condition.operator === "includes") {
+    if (Array.isArray(current)) return current.includes(String(condition.value));
+    if (typeof current === "string") return current.includes(String(condition.value));
+    return false;
+  }
+  return true;
+}
+
+function sanitizeModuleAnswers(
+  module: JourneyModule,
+  rawAnswers: Record<string, JourneyAnswerValue>,
+): Record<string, JourneyAnswerValue> {
+  const answers: Record<string, JourneyAnswerValue> = {};
+
+  for (const question of module.questions) {
+    if (!questionConditionMatches(question.condition, answers)) continue;
+    const value = rawAnswers[question.id];
+    const empty =
+      value === undefined ||
+      value === null ||
+      value === "" ||
+      (Array.isArray(value) && value.length === 0);
+
+    if (empty) {
+      if (question.required) {
+        throw new Error(`Preencha o campo obrigatório: ${question.label}`);
+      }
+      continue;
+    }
+
+    if (question.type === "boolean" || question.type === "event") {
+      if (typeof value !== "boolean") {
+        throw new Error(`Resposta inválida: ${question.label}`);
+      }
+      answers[question.id] = value;
+      continue;
+    }
+
+    if (question.type === "single_choice" || question.type === "emotion") {
+      const allowed = new Set((question.options ?? []).map((option) => option.id));
+      if (typeof value !== "string" || !allowed.has(value)) {
+        throw new Error(`Opção inválida: ${question.label}`);
+      }
+      answers[question.id] = value;
+      continue;
+    }
+
+    if (question.type === "multiple_choice") {
+      const allowed = new Set((question.options ?? []).map((option) => option.id));
+      if (!Array.isArray(value) || !value.every((item) => allowed.has(item))) {
+        throw new Error(`Opções inválidas: ${question.label}`);
+      }
+      answers[question.id] = value;
+      continue;
+    }
+
+    if (
+      question.type === "scale" ||
+      question.type === "number" ||
+      question.type === "duration"
+    ) {
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        throw new Error(`Número inválido: ${question.label}`);
+      }
+      if (question.min != null && value < question.min) {
+        throw new Error(`Valor abaixo do mínimo: ${question.label}`);
+      }
+      if (question.max != null && value > question.max) {
+        throw new Error(`Valor acima do máximo: ${question.label}`);
+      }
+      if (question.type === "duration" && value < 0) {
+        throw new Error(`Duração inválida: ${question.label}`);
+      }
+      answers[question.id] = value;
+      continue;
+    }
+
+    if (typeof value !== "string") {
+      throw new Error(`Texto inválido: ${question.label}`);
+    }
+    answers[question.id] = value.slice(0, 5000);
+  }
+
+  return answers;
+}
+
 function emptySnapshot(): JournalSnapshot {
   return {
     onboarded: false,
@@ -104,6 +204,7 @@ function emptySnapshot(): JournalSnapshot {
       publishedAt: null,
       draftUpdatedAt: null,
     },
+    journeyResponses: [],
   };
 }
 
@@ -127,10 +228,37 @@ async function loadSnapshot(
   const noteRows = await sql<{ month: string; notes: string }>`
     select month, notes from month_notes where journey_id = ${journey.id}
   `;
+  const responseRows = await sql<{
+    id: string;
+    module_id: string;
+    occurred_on: string;
+    answers: string;
+    created_at: string;
+    updated_at: string;
+  }>`
+    select
+      id,
+      module_id,
+      occurred_on::text,
+      answers,
+      created_at::text,
+      updated_at::text
+    from journey_module_responses
+    where journey_id = ${journey.id}
+    order by occurred_on desc, created_at desc
+  `;
   const days: Record<string, DayLog> = {};
   for (const r of dayRows) days[r.day] = parseJson<DayLog>(r.log, {});
   const monthNotes: Record<string, MonthNotes> = {};
   for (const r of noteRows) monthNotes[r.month] = parseJson<MonthNotes>(r.notes, {});
+  const journeyResponses: JourneyModuleResponse[] = responseRows.map((row) => ({
+    id: row.id,
+    moduleId: row.module_id,
+    occurredOn: row.occurred_on,
+    answers: parseJson<Record<string, JourneyAnswerValue>>(row.answers, {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
 
   const source =
     view === "doctor"
@@ -149,6 +277,7 @@ async function loadSnapshot(
     plan: journeyPlan.legacy,
     journeyPlan,
     journeyMeta: journeyMeta(journey),
+    journeyResponses,
   };
 }
 
@@ -786,6 +915,155 @@ export const publishJourney = createServerFn({ method: "POST" })
 
     const rows = await sql<JourneyRow>`select * from journeys where id = ${journey.id}`;
     return loadSnapshot(sql, rows[0]!, "doctor");
+  });
+
+export const saveJourneyResponse = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    (data: {
+      moduleId: string;
+      occurredOn: string;
+      answers: Record<string, JourneyAnswerValue>;
+    }) => data,
+  )
+  .handler(async ({ context, data }): Promise<JourneyModuleResponse> => {
+    const sql = await getSql();
+    const journey = await resolvePatientJourney(sql, context.userId);
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data.occurredOn)) {
+      throw new Error("Data de registro inválida.");
+    }
+
+    const publishedPlan = parseJourneyPlan(journey.published_plan, journey.plan);
+    const module = publishedPlan.modules.find(
+      (item) => item.id === data.moduleId && item.enabled,
+    );
+    if (!module) {
+      throw new Error("Este módulo não está ativo na Jornada publicada.");
+    }
+
+    const sanitizedAnswers = sanitizeModuleAnswers(module, data.answers ?? {});
+
+    const existingRows = await sql<{
+      id: string;
+      module_id: string;
+      occurred_on: string;
+      answers: string;
+      created_at: string;
+      updated_at: string;
+    }>`
+      select
+        id,
+        module_id,
+        occurred_on::text,
+        answers,
+        created_at::text,
+        updated_at::text
+      from journey_module_responses
+      where journey_id = ${journey.id}
+        and module_id = ${module.id}
+      order by occurred_on desc, created_at desc
+    `;
+
+    if (module.frequency.kind !== "event_based") {
+      const date = new Date(`${data.occurredOn}T12:00:00`);
+      const existingResponses = existingRows.map((row) => ({
+        id: row.id,
+        moduleId: row.module_id,
+        occurredOn: row.occurred_on,
+        answers: parseJson<Record<string, JourneyAnswerValue>>(row.answers, {}),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+      const duplicate = existingResponses.find((response) =>
+        responseMatchesPeriod(module, response, date),
+      );
+
+      if (!duplicate && !moduleIsDue(module, date, existingResponses)) {
+        throw new Error("Este registro não está previsto para esta data.");
+      }
+
+      if (duplicate) {
+        await sql`
+          update journey_module_responses
+          set answers = ${JSON.stringify(sanitizedAnswers)},
+              occurred_on = ${data.occurredOn},
+              updated_at = now()
+          where id = ${duplicate.id}
+            and journey_id = ${journey.id}
+        `;
+        const rows = await sql<{
+          id: string;
+          module_id: string;
+          occurred_on: string;
+          answers: string;
+          created_at: string;
+          updated_at: string;
+        }>`
+          select
+            id,
+            module_id,
+            occurred_on::text,
+            answers,
+            created_at::text,
+            updated_at::text
+          from journey_module_responses
+          where id = ${duplicate.id}
+        `;
+        const row = rows[0]!;
+        return {
+          id: row.id,
+          moduleId: row.module_id,
+          occurredOn: row.occurred_on,
+          answers: parseJson<Record<string, JourneyAnswerValue>>(row.answers, {}),
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        };
+      }
+    }
+
+    const id = crypto.randomUUID();
+    await sql`
+      insert into journey_module_responses (
+        id, journey_id, module_id, occurred_on, answers
+      ) values (
+        ${id},
+        ${journey.id},
+        ${module.id},
+        ${data.occurredOn},
+        ${JSON.stringify(sanitizedAnswers)}
+      )
+    `;
+
+    await notifyDoctor(sql, journey, `registrou: ${module.title}`);
+
+    const rows = await sql<{
+      id: string;
+      module_id: string;
+      occurred_on: string;
+      answers: string;
+      created_at: string;
+      updated_at: string;
+    }>`
+      select
+        id,
+        module_id,
+        occurred_on::text,
+        answers,
+        created_at::text,
+        updated_at::text
+      from journey_module_responses
+      where id = ${id}
+    `;
+    const row = rows[0]!;
+    return {
+      id: row.id,
+      moduleId: row.module_id,
+      occurredOn: row.occurred_on,
+      answers: parseJson<Record<string, JourneyAnswerValue>>(row.answers, {}),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
   });
 
 export const saveDayLog = createServerFn({ method: "POST" })
