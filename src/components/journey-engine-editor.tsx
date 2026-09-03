@@ -8,6 +8,10 @@ import {
   JOURNEY_FREQUENCY_LABELS,
   JOURNEY_MODULE_LABELS,
 } from "@/lib/journey-plan";
+import {
+  agirInitialTemplate,
+  sweetsThirtyDayTemplate,
+} from "@/lib/journey-templates-v2";
 import { useJournal } from "@/lib/journal-store";
 import type {
   JourneyFrequencyKind,
@@ -131,6 +135,31 @@ export function JourneyEngineEditor() {
           </div>
         </div>
         {message && <p className="mt-3 text-sm text-muted-foreground">{message}</p>}
+      </section>
+
+      <section className="space-y-3 rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
+        <div>
+          <h3 className="font-display text-lg font-semibold">Começar por um modelo</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            O modelo apenas preenche um rascunho. Tudo pode ser alterado antes da publicação.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setPlan(agirInitialTemplate())}
+          >
+            Método AGIR — ciclo inicial
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setPlan(sweetsThirtyDayTemplate())}
+          >
+            Doces/comer emocional — 30 dias
+          </Button>
+        </div>
       </section>
 
       <section className="space-y-4 rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
