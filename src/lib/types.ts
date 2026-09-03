@@ -306,6 +306,7 @@ export type JournalSnapshot = {
   monthNotes: Record<string, MonthNotes>;
   plan: PlanConfig;
   journeyPlan: JourneyPlanV2;
+  publishedJourneyPlan: JourneyPlanV2;
   journeyMeta: JourneyMeta;
   journeyResponses: JourneyModuleResponse[];
   journeyActionProgress: JourneyActionProgress[];
