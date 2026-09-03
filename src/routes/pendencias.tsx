@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
@@ -215,7 +216,7 @@ function PendingSection({
   icon: typeof ClipboardList;
   title: string;
   empty: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   const items = Array.isArray(children) ? children.filter(Boolean) : children;
 
