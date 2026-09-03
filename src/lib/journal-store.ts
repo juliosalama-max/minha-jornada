@@ -17,15 +17,19 @@ import {
   saveMonthNotes,
   saveOnboarding,
   savePlan,
+  saveJourneyDraft,
+  publishJourney,
   saveProfile,
   saveTasks,
   updatePatientTask,
   type Bootstrap,
 } from "./journal-api";
 import { emptyPlan } from "./plan-templates";
+import { emptyJourneyPlan } from "./journey-plan";
 import type {
   DayLog,
   JournalSnapshot,
+  JourneyPlanV2,
   MonthNotes,
   PatientSummary,
   PlanConfig,
@@ -52,6 +56,13 @@ const seed = (): JournalSnapshot => ({
   days: {},
   monthNotes: {},
   plan: emptyPlan(),
+  journeyPlan: emptyJourneyPlan(),
+  journeyMeta: {
+    status: "draft",
+    currentVersion: 0,
+    publishedAt: null,
+    draftUpdatedAt: null,
+  },
 });
 
 type JournalState = JournalSnapshot & {
@@ -78,6 +89,9 @@ type JournalState = JournalSnapshot & {
   setNutritionDate: (index: number, date: string) => void;
   setNutritionList: (nutrition: JournalSnapshot["nutrition"]) => void;
   setPlan: (patch: Partial<PlanConfig>) => void;
+  setJourneyPlan: (patch: Partial<JourneyPlanV2>) => void;
+  saveJourneyDraft: () => Promise<void>;
+  publishJourney: () => Promise<void>;
   setTasksList: (tasks: Task[]) => void;
   toggleTask: (id: string) => void;
   updateTaskMeta: (id: string, meta: TaskMeta) => void;
@@ -98,6 +112,13 @@ function applySnapshot(s: JournalSnapshot) {
     days: s.days,
     monthNotes: s.monthNotes,
     plan: s.plan ?? emptyPlan(),
+    journeyPlan: s.journeyPlan ?? emptyJourneyPlan(),
+    journeyMeta: s.journeyMeta ?? {
+      status: "draft",
+      currentVersion: 0,
+      publishedAt: null,
+      draftUpdatedAt: null,
+    },
   };
 }
 
@@ -257,9 +278,38 @@ export const useJournal = create<JournalState>((set, get) => ({
     void saveConsults({ data: { journeyId: s.journeyId, nutrition } });
   },
   setPlan: (patch) => {
-    set((s) => ({ plan: { ...s.plan, ...patch } }));
+    set((s) => ({
+      plan: { ...s.plan, ...patch },
+      journeyPlan: {
+        ...s.journeyPlan,
+        legacy: { ...s.plan, ...patch },
+        motivation: patch.motivation ?? s.journeyPlan.motivation,
+        objective: patch.workOn ?? s.journeyPlan.objective,
+      },
+    }));
     const s = get();
     void savePlan({ data: { journeyId: s.journeyId, plan: s.plan } });
+  },
+  setJourneyPlan: (patch) => {
+    set((s) => ({
+      journeyPlan: {
+        ...s.journeyPlan,
+        ...patch,
+        legacy: patch.legacy ?? s.journeyPlan.legacy,
+      },
+    }));
+  },
+  saveJourneyDraft: async () => {
+    const s = get();
+    const snapshot = await saveJourneyDraft({
+      data: { journeyId: s.journeyId, plan: s.journeyPlan },
+    });
+    set(applySnapshot(snapshot));
+  },
+  publishJourney: async () => {
+    const s = get();
+    const snapshot = await publishJourney({ data: { journeyId: s.journeyId } });
+    set(applySnapshot(snapshot));
   },
   setTasksList: (tasks) => {
     set({ tasks });
