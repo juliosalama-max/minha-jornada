@@ -14,6 +14,7 @@ import { Route as HojeRouteImport } from './routes/hoje'
 import { Route as JornadaRouteImport } from './routes/jornada'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MesRouteImport } from './routes/mes'
+import { Route as PendenciasRouteImport } from './routes/pendencias'
 import { Route as PerfilRouteImport } from './routes/perfil'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
@@ -42,6 +43,11 @@ const MesRoute = MesRouteImport.update({
   path: '/mes',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PendenciasRoute = PendenciasRouteImport.update({
+  id: '/pendencias',
+  path: '/pendencias',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PerfilRoute = PerfilRouteImport.update({
   id: '/perfil',
   path: '/perfil',
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/jornada': typeof JornadaRoute
   '/login': typeof LoginRoute
   '/mes': typeof MesRoute
+  '/pendencias': typeof PendenciasRoute
   '/perfil': typeof PerfilRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
@@ -68,6 +75,7 @@ export interface FileRoutesByTo {
   '/jornada': typeof JornadaRoute
   '/login': typeof LoginRoute
   '/mes': typeof MesRoute
+  '/pendencias': typeof PendenciasRoute
   '/perfil': typeof PerfilRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
@@ -78,13 +86,319 @@ export interface FileRoutesById {
   '/jornada': typeof JornadaRoute
   '/login': typeof LoginRoute
   '/mes': typeof MesRoute
+  '/pendencias': typeof PendenciasRoute
   '/perfil': typeof PerfilRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/hoje' | '/jornada' | '/login' | '/mes' | '/perfil' | '/api/auth/$'
+    '/' | '/hoje' | '/jornada' | '/login' | '/mes' | '/pendencias' | '/perfil' | '/api/auth/
+  fileRoutesByTo: FileRoutesByTo
+  to: '/' | '/hoje' | '/jornada' | '/login' | '/mes' | '/pendencias' | '/perfil' | '/api/auth/
+  id:
+    | '__root__'
+    | '/'
+    | '/hoje'
+    | '/jornada'
+    | '/login'
+    | '/mes'
+    | '/pendencias'
+    | '/perfil'
+    | '/api/auth/$'
+  fileRoutesById: FileRoutesById
+}
+export interface RootRouteChildren {
+  IndexRoute: typeof IndexRoute
+  HojeRoute: typeof HojeRoute
+  JornadaRoute: typeof JornadaRoute
+  LoginRoute: typeof LoginRoute
+  MesRoute: typeof MesRoute
+  PendenciasRoute: typeof PendenciasRoute
+  PerfilRoute: typeof PerfilRoute
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+}
+
+declare module '@tanstack/react-router' {
+  interface FileRoutesByPath {
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hoje': {
+      id: '/hoje'
+      path: '/hoje'
+      fullPath: '/hoje'
+      preLoaderRoute: typeof HojeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/jornada': {
+      id: '/jornada'
+      path: '/jornada'
+      fullPath: '/jornada'
+      preLoaderRoute: typeof JornadaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mes': {
+      id: '/mes'
+      path: '/mes'
+      fullPath: '/mes'
+      preLoaderRoute: typeof MesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pendencias': {
+      id: '/pendencias'
+      path: '/pendencias'
+      fullPath: '/pendencias'
+      preLoaderRoute: typeof PendenciasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/perfil': {
+      id: '/perfil'
+      path: '/perfil'
+      fullPath: '/perfil'
+      preLoaderRoute: typeof PerfilRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+  }
+}
+
+const rootRouteChildren: RootRouteChildren = {
+  IndexRoute: IndexRoute,
+  HojeRoute: HojeRoute,
+  JornadaRoute: JornadaRoute,
+  LoginRoute: LoginRoute,
+  MesRoute: MesRoute,
+  PendenciasRoute: PendenciasRoute,
+  PerfilRoute: PerfilRoute,
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
+}
+export const routeTree = rootRouteImport
+  ._addFileChildren(rootRouteChildren)
+  ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}
+
+  fileRoutesByTo: FileRoutesByTo
+  to: '/' | '/hoje' | '/jornada' | '/login' | '/mes' | '/perfil' | '/api/auth/$'
+  id:
+    | '__root__'
+    | '/'
+    | '/hoje'
+    | '/jornada'
+    | '/login'
+    | '/mes'
+    | '/perfil'
+    | '/api/auth/$'
+  fileRoutesById: FileRoutesById
+}
+export interface RootRouteChildren {
+  IndexRoute: typeof IndexRoute
+  HojeRoute: typeof HojeRoute
+  JornadaRoute: typeof JornadaRoute
+  LoginRoute: typeof LoginRoute
+  MesRoute: typeof MesRoute
+  PerfilRoute: typeof PerfilRoute
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+}
+
+declare module '@tanstack/react-router' {
+  interface FileRoutesByPath {
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hoje': {
+      id: '/hoje'
+      path: '/hoje'
+      fullPath: '/hoje'
+      preLoaderRoute: typeof HojeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/jornada': {
+      id: '/jornada'
+      path: '/jornada'
+      fullPath: '/jornada'
+      preLoaderRoute: typeof JornadaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mes': {
+      id: '/mes'
+      path: '/mes'
+      fullPath: '/mes'
+      preLoaderRoute: typeof MesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/perfil': {
+      id: '/perfil'
+      path: '/perfil'
+      fullPath: '/perfil'
+      preLoaderRoute: typeof PerfilRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+  }
+}
+
+const rootRouteChildren: RootRouteChildren = {
+  IndexRoute: IndexRoute,
+  HojeRoute: HojeRoute,
+  JornadaRoute: JornadaRoute,
+  LoginRoute: LoginRoute,
+  MesRoute: MesRoute,
+  PerfilRoute: PerfilRoute,
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
+}
+export const routeTree = rootRouteImport
+  ._addFileChildren(rootRouteChildren)
+  ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}
+
+  id:
+    | '__root__'
+    | '/'
+    | '/hoje'
+    | '/jornada'
+    | '/login'
+    | '/mes'
+    | '/perfil'
+    | '/api/auth/$'
+  fileRoutesById: FileRoutesById
+}
+export interface RootRouteChildren {
+  IndexRoute: typeof IndexRoute
+  HojeRoute: typeof HojeRoute
+  JornadaRoute: typeof JornadaRoute
+  LoginRoute: typeof LoginRoute
+  MesRoute: typeof MesRoute
+  PerfilRoute: typeof PerfilRoute
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+}
+
+declare module '@tanstack/react-router' {
+  interface FileRoutesByPath {
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hoje': {
+      id: '/hoje'
+      path: '/hoje'
+      fullPath: '/hoje'
+      preLoaderRoute: typeof HojeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/jornada': {
+      id: '/jornada'
+      path: '/jornada'
+      fullPath: '/jornada'
+      preLoaderRoute: typeof JornadaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mes': {
+      id: '/mes'
+      path: '/mes'
+      fullPath: '/mes'
+      preLoaderRoute: typeof MesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/perfil': {
+      id: '/perfil'
+      path: '/perfil'
+      fullPath: '/perfil'
+      preLoaderRoute: typeof PerfilRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+  }
+}
+
+const rootRouteChildren: RootRouteChildren = {
+  IndexRoute: IndexRoute,
+  HojeRoute: HojeRoute,
+  JornadaRoute: JornadaRoute,
+  LoginRoute: LoginRoute,
+  MesRoute: MesRoute,
+  PerfilRoute: PerfilRoute,
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
+}
+export const routeTree = rootRouteImport
+  ._addFileChildren(rootRouteChildren)
+  ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}
+
   fileRoutesByTo: FileRoutesByTo
   to: '/' | '/hoje' | '/jornada' | '/login' | '/mes' | '/perfil' | '/api/auth/$'
   id:
