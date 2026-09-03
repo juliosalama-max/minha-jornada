@@ -199,6 +199,7 @@ function emptySnapshot(): JournalSnapshot {
     monthNotes: {},
     plan: emptyPlan(),
     journeyPlan: emptyJourneyPlan(),
+    publishedJourneyPlan: emptyJourneyPlan(),
     journeyMeta: {
       status: "draft",
       currentVersion: 0,
@@ -292,11 +293,14 @@ async function loadSnapshot(
     updatedAt: row.updated_at,
   }));
 
-  const source =
+  const publishedJourneyPlan = parseJourneyPlan(
+    journey.published_plan || journey.plan,
+    journey.plan,
+  );
+  const journeyPlan =
     view === "doctor"
-      ? journey.draft_plan || journey.plan
-      : journey.published_plan || journey.plan;
-  const journeyPlan = parseJourneyPlan(source, journey.plan);
+      ? parseJourneyPlan(journey.draft_plan || journey.plan, journey.plan)
+      : publishedJourneyPlan;
 
   return {
     onboarded: Boolean(journey.onboarded),
@@ -308,6 +312,7 @@ async function loadSnapshot(
     monthNotes,
     plan: journeyPlan.legacy,
     journeyPlan,
+    publishedJourneyPlan,
     journeyMeta: journeyMeta(journey),
     journeyResponses,
     journeyActionProgress,
