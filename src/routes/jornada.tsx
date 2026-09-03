@@ -15,6 +15,7 @@ import {
   SYMPTOMS,
   TASK_CATEGORY_LABEL,
 } from "@/lib/constants";
+import { resolvedAppointmentDate } from "@/lib/journey-actions";
 import { useJournal } from "@/lib/journal-store";
 import type { Task } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -164,6 +165,73 @@ function PatientJornada() {
         </ul>
       </section>
 
+      {journeyPlan.appointments.filter((item) => item.visibleToPatient).length > 0 && (
+        <section className="space-y-3">
+          <h2 className="font-display text-lg font-semibold">Próximos encontros</h2>
+          {journeyPlan.appointments
+            .filter((item) => item.visibleToPatient && item.status !== "cancelled")
+            .map((appointment) => {
+              const date = resolvedAppointmentDate(journeyPlan, appointment);
+              return (
+                <div
+                  key={appointment.id}
+                  className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium">
+                        {appointment.type === "doctor"
+                          ? "Consulta médica"
+                          : appointment.type === "nutrition"
+                            ? "Consulta com nutricionista"
+                            : appointment.type === "psychology"
+                              ? "Psicologia"
+                              : appointment.type === "nursing"
+                                ? "Enfermagem"
+                                : "Outro encontro"}
+                      </p>
+                      {appointment.professional && (
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {appointment.professional}
+                        </p>
+                      )}
+                      {appointment.notes && (
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {appointment.notes}
+                        </p>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {date
+                        ? format(parseISO(date), "dd/MM/yyyy")
+                        : "Data a definir"}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+        </section>
+      )}
+
+      {(journeyPlan.tasks.some((item) => item.visibleToPatient) ||
+        journeyPlan.exams.some((item) => item.visibleToPatient)) && (
+        <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
+          <h2 className="font-display text-lg font-semibold">Ações deste ciclo</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Tarefas, exames e avaliações ficam organizados na área Pendências.
+          </p>
+          <a
+            href="/pendencias"
+            className="mt-3 inline-flex text-sm font-medium text-primary"
+          >
+            Ver pendências
+          </a>
+        </section>
+      )}
+
+      {journeyPlan.appointments.length === 0 &&
+        journeyPlan.tasks.length === 0 &&
+        journeyPlan.exams.length === 0 && (
       <section className="space-y-3">
         <h2 className="font-display text-lg font-semibold">Consultas médicas</h2>
         <ol className="space-y-3">
@@ -242,6 +310,8 @@ function PatientJornada() {
             </div>
           ))}
         </section>
+      )}
+
       )}
 
       <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
