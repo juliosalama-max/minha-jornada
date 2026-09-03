@@ -13,6 +13,7 @@ import {
 import { NoticeFeed } from "@/components/notice-feed";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { openCareActionCount, resolvedAppointmentDate } from "@/lib/journey-actions";
 import {
   completedModulesForDate,
   dueModulesForDate,
@@ -37,6 +38,7 @@ function PatientHome() {
   const days = useJournal((s) => s.days);
   const tasks = useJournal((s) => s.tasks);
   const consults = useJournal((s) => s.consults);
+  const actionProgress = useJournal((s) => s.journeyActionProgress);
   const today = new Date();
   const first = name.trim().split(" ")[0];
   const activeModules = journeyPlan.modules.filter((module) => module.enabled);
@@ -54,8 +56,18 @@ function PatientHome() {
   const legacyRecentDays = Object.keys(days).filter(
     (day) => parseISO(day) >= subDays(today, 6),
   ).length;
+  const hasVersionedActions =
+    journeyPlan.tasks.length > 0 ||
+    journeyPlan.exams.length > 0 ||
+    journeyPlan.appointments.length > 0;
   const openTasks = tasks.filter((task) => !task.done);
-  const nextConsult = findNextConsult(consults, today);
+  const pendingCount = hasVersionedActions
+    ? openCareActionCount(journeyPlan, actionProgress)
+    : openTasks.length;
+  const nextV2Appointment = findNextAppointment(journeyPlan, today);
+  const nextConsult = nextV2Appointment
+    ? null
+    : findNextConsult(consults, today);
 
   return (
     <div className="space-y-5">
@@ -147,19 +159,26 @@ function PatientHome() {
         <InfoCard
           title="Próxima consulta"
           content={
-            nextConsult
-              ? nextConsult.date
-                ? format(parseISO(nextConsult.date), "d 'de' MMMM", { locale: ptBR })
-                : "Data ainda não definida"
-              : "Nenhuma consulta prevista"
+            nextV2Appointment
+              ? format(parseISO(nextV2Appointment.date), "d 'de' MMMM", { locale: ptBR })
+              : nextConsult
+                ? nextConsult.date
+                  ? format(parseISO(nextConsult.date), "d 'de' MMMM", { locale: ptBR })
+                  : "Data ainda não definida"
+                : "Nenhuma consulta prevista"
           }
-          detail={nextConsult?.focus || undefined}
+          detail={
+            nextV2Appointment?.appointment.notes ||
+            nextV2Appointment?.appointment.professional ||
+            nextConsult?.focus ||
+            undefined
+          }
         />
         <InfoCard
           title="Pendências"
           content={
-            openTasks.length
-              ? `${openTasks.length} ${openTasks.length === 1 ? "item" : "itens"}`
+            pendingCount
+              ? `${pendingCount} ${pendingCount === 1 ? "item" : "itens"}`
               : "Nenhuma tarefa pendente"
           }
           detail="Consultas, exames e tarefas do acompanhamento."
@@ -191,18 +210,27 @@ function PatientHome() {
 
 function DoctorHome() {
   const patientName = useJournal((s) => s.patientName);
-  const journeyPlan = useJournal((s) => s.journeyPlan);
+  const journeyPlan = useJournal((s) => s.publishedJourneyPlan);
   const journeyMeta = useJournal((s) => s.journeyMeta);
   const responses = useJournal((s) => s.journeyResponses);
   const tasks = useJournal((s) => s.tasks);
   const consults = useJournal((s) => s.consults);
+  const actionProgress = useJournal((s) => s.journeyActionProgress);
   const inviteCode = useJournal((s) => s.inviteCode);
   const patients = useJournal((s) => s.patients);
   const journeyId = useJournal((s) => s.journeyId);
   const patientSummary = patients.find((patient) => patient.id === journeyId);
   const activeModules = journeyPlan.modules.filter((module) => module.enabled);
+  const hasVersionedActions =
+    journeyPlan.tasks.length > 0 ||
+    journeyPlan.exams.length > 0 ||
+    journeyPlan.appointments.length > 0;
   const openTasks = tasks.filter((task) => !task.done);
-  const nextConsult = findNextConsult(consults, new Date());
+  const pendingCount = hasVersionedActions
+    ? openCareActionCount(journeyPlan, actionProgress)
+    : openTasks.length;
+  const nextV2Appointment = findNextAppointment(journeyPlan, new Date());
+  const nextConsult = nextV2Appointment ? null : findNextConsult(consults, new Date());
   const lastResponse = [...responses].sort((a, b) =>
     b.occurredOn.localeCompare(a.occurredOn),
   )[0];
@@ -274,18 +302,26 @@ function DoctorHome() {
         />
         <SummaryCard
           label="Pendências"
-          value={String(openTasks.length)}
-          detail="Tarefas ainda abertas"
+          value={String(pendingCount)}
+          detail="Tarefas e exames ainda abertos"
           icon={CheckCircle2}
         />
         <SummaryCard
           label="Próxima consulta"
           value={
-            nextConsult?.date
-              ? format(parseISO(nextConsult.date), "dd/MM")
-              : "—"
+            nextV2Appointment
+              ? format(parseISO(nextV2Appointment.date), "dd/MM")
+              : nextConsult?.date
+                ? format(parseISO(nextConsult.date), "dd/MM")
+                : "—"
           }
-          detail={nextConsult ? nextConsult.focus || "Consulta prevista" : "Sem consulta"}
+          detail={
+            nextV2Appointment
+              ? nextV2Appointment.appointment.professional || "Consulta prevista"
+              : nextConsult
+                ? nextConsult.focus || "Consulta prevista"
+                : "Sem consulta"
+          }
           icon={CalendarDays}
         />
       </section>
@@ -394,6 +430,26 @@ function findNextConsult(
     .filter((consult) => consult.date && consult.date >= todayKey)
     .sort((a, b) => a.date.localeCompare(b.date))[0];
   return dated ?? consults.find((consult) => !consult.date);
+}
+
+function findNextAppointment(
+  plan: ReturnType<typeof useJournal.getState>["journeyPlan"],
+  today: Date,
+) {
+  const todayKey = format(today, "yyyy-MM-dd");
+  return plan.appointments
+    .filter(
+      (appointment) =>
+        appointment.visibleToPatient &&
+        appointment.status !== "cancelled" &&
+        appointment.status !== "completed",
+    )
+    .map((appointment) => ({
+      appointment,
+      date: resolvedAppointmentDate(plan, appointment),
+    }))
+    .filter((item) => item.date && item.date >= todayKey)
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
 }
 
 function statusLabel(status: string): string {
