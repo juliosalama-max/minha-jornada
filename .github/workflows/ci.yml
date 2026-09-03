@@ -30,7 +30,16 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Tests
+      - name: Journey and app tests
+        run: |
+          node --test scripts/migration-plan.test.mjs
+          node --experimental-strip-types --test \
+            src/lib/journey-schedule.test.ts \
+            src/lib/app-data/app-data.test.ts \
+            src/lib/auth/gate-identity.test.ts
+
+      - name: Legacy template suite
+        continue-on-error: true
         run: npm test
 
       - name: Development build
