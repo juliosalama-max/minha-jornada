@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Minha Jornada",
+      "hasCanvas": false,
+      "bodyTextLen": 48,
+      "bodyTextHash": "1d32dc4fd3e90244e2ca7ebfb60b79af1be0f06b93b645cff45066873ac30863",
+      "bodyTextPrefix": "Método AGIR MINHA JORNADA Carregando sua sessão…",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Minha Jornada",
+      "hasCanvas": false,
+      "bodyTextLen": 267,
+      "bodyTextHash": "4a8623695071393834a90ae96898f66db82f37fa6c5414cb6592d66d5914ea05",
+      "bodyTextPrefix": "MÉTODO AGIR Entrar A mudança começa com a decisão de agir. Pacie",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}
