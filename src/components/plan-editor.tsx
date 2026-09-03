@@ -19,6 +19,16 @@ export function PlanEditor() {
   const setTasksList = useJournal((s) => s.setTasksList);
   const inviteCode = useJournal((s) => s.inviteCode);
   const patientName = useJournal((s) => s.patientName);
+  const showLegacyCompatibility =
+    consults.length > 0 ||
+    nutrition.length > 0 ||
+    tasks.length > 0 ||
+    plan.medication.enabled ||
+    plan.movement.enabled ||
+    plan.sleep.enabled ||
+    plan.spirituality.enabled ||
+    plan.food.enabled ||
+    plan.social.enabled;
 
   function patchPlan(patch: Partial<PlanConfig>) {
     setPlan(patch);
@@ -48,10 +58,16 @@ export function PlanEditor() {
 
       <JourneyEngineEditor />
 
-      <div className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
-        Os controles abaixo são a camada de compatibilidade com os registros atuais.
-        Eles serão substituídos gradualmente pelos módulos V2 sem perder o histórico.
-      </div>
+      {showLegacyCompatibility && (
+        <details className="rounded-xl border border-dashed border-border p-4">
+          <summary className="cursor-pointer text-sm font-medium">
+            Acompanhamento anterior · compatibilidade
+          </summary>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            Estes controles existem apenas para preservar pacientes e registros do modelo anterior.
+            Para novas Jornadas, use o editor V2 acima.
+          </p>
+          <div className="mt-5 space-y-6">
 
       <section className="space-y-3 rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
         <h2 className="font-display text-lg font-semibold">Compatibilidade com o acompanhamento atual</h2>
@@ -377,6 +393,9 @@ export function PlanEditor() {
           <TaskEdit key={t.id} task={t} tasks={tasks} onChange={setTasksList} />
         ))}
       </section>
+          </div>
+        </details>
+      )}
     </div>
   );
 }
