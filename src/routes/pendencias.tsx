@@ -108,7 +108,7 @@ function PendenciasPage() {
                 key={task.id}
                 task={task}
                 progress={actionProgressFor(progress, "task", task.id)}
-                patient={role === "patient"}
+                patient={role === "patient" && task.responsible === "patient"}
                 onStatus={(status) =>
                   void updateProgress("task", task.id, status)
                 }
