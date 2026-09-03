@@ -151,13 +151,20 @@ async function patientJourney(sql: Sql, userId: string) {
   return rows[0] ?? null;
 }
 
-async function resolveWritableJourney(sql: Sql, userId: string, journeyId?: string | null) {
+async function resolvePatientJourney(sql: Sql, userId: string) {
   const profile = await getProfile(sql, userId);
-  if (!profile) throw new Error("Perfil não encontrado");
-  if (profile.role === "patient") {
-    const row = await patientJourney(sql, userId);
-    if (!row) throw new Error("Jornada não encontrada");
-    return row;
+  if (!profile || profile.role !== "patient") {
+    throw new Error("Apenas o paciente pode registrar esta informação.");
+  }
+  const row = await patientJourney(sql, userId);
+  if (!row) throw new Error("Jornada não encontrada");
+  return row;
+}
+
+async function resolveDoctorJourney(sql: Sql, userId: string, journeyId?: string | null) {
+  const profile = await getProfile(sql, userId);
+  if (!profile || profile.role !== "doctor") {
+    throw new Error("Apenas a equipe médica pode alterar o plano.");
   }
   if (!journeyId) throw new Error("Selecione um paciente");
   const rows = await sql<JourneyRow>`
@@ -345,7 +352,7 @@ export const markNoticesRead = createServerFn({ method: "POST" })
 export const chooseRole = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((data: { role: Role; name: string; inviteCode?: string }) => ({
-    role: data.role === "doctor" ? "doctor" : "patient",
+    role: data.role,
     name: data.name.trim(),
     inviteCode: String(data.inviteCode ?? "")
       .replace(/[^A-Za-z0-9]/g, "")
@@ -354,11 +361,19 @@ export const chooseRole = createServerFn({ method: "POST" })
   .handler(async ({ context, data }): Promise<Bootstrap> => {
     const sql = await getSql();
     const existing = await getProfile(sql, context.userId);
+    if (data.role === "doctor") {
+      if (!existing || existing.role !== "doctor") {
+        throw new Error("Contas profissionais são liberadas apenas pela administração.");
+      }
+      return loadBootstrap(sql, context.userId, null);
+    }
     if (!existing) {
       await sql`
         insert into profiles (user_id, role, display_name)
-        values (${context.userId}, ${data.role}, ${data.name})
+        values (${context.userId}, 'patient', ${data.name})
       `;
+    } else if (existing.role !== "patient") {
+      throw new Error("Esta conta não está autorizada como paciente.");
     }
     if (data.role === "patient") {
       if (data.inviteCode.length < 6) {
@@ -484,30 +499,19 @@ export const saveOnboarding = createServerFn({ method: "POST" })
   .validator((data: { journeyId?: string | null; profile: Partial<Profile> }) => data)
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const journey = await resolveWritableJourney(sql, context.userId, data.journeyId);
-    const name = data.profile.name ?? journey.name;
-    const first = data.profile.firstConsultDate ?? journey.first_consult_date;
-    const weekday =
-      data.profile.injectionWeekday === undefined
-        ? journey.injection_weekday
-        : data.profile.injectionWeekday;
-    const dose = data.profile.dose ?? journey.dose;
+    const journey = await resolvePatientJourney(sql, context.userId);
+    const name = (data.profile.name ?? journey.name).trim();
     await sql`
       update journeys
       set onboarded = true,
           name = ${name},
-          first_consult_date = ${first},
-          injection_weekday = ${weekday},
-          dose = ${dose},
           updated_at = now()
       where id = ${journey.id}
     `;
-    if (journey.patient_user_id) {
-      await sql`
-        update profiles set display_name = ${name}
-        where user_id = ${journey.patient_user_id}
-      `;
-    }
+    await sql`
+      update profiles set display_name = ${name}
+      where user_id = ${context.userId}
+    `;
     return true;
   });
 
@@ -516,7 +520,25 @@ export const saveProfile = createServerFn({ method: "POST" })
   .validator((data: { journeyId?: string | null; profile: Profile }) => data)
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const journey = await resolveWritableJourney(sql, context.userId, data.journeyId);
+    const actor = await getProfile(sql, context.userId);
+    if (!actor) throw new Error("Perfil não encontrado");
+
+    if (actor.role === "patient") {
+      const journey = await resolvePatientJourney(sql, context.userId);
+      const name = data.profile.name.trim();
+      await sql`
+        update journeys
+        set name = ${name}, updated_at = now()
+        where id = ${journey.id}
+      `;
+      await sql`
+        update profiles set display_name = ${name}
+        where user_id = ${context.userId}
+      `;
+      return true;
+    }
+
+    const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
     await sql`
       update journeys
       set name = ${data.profile.name},
@@ -526,10 +548,12 @@ export const saveProfile = createServerFn({ method: "POST" })
           updated_at = now()
       where id = ${journey.id}
     `;
-    await sql`
-      update profiles set display_name = ${data.profile.name}
-      where user_id = ${journey.patient_user_id}
-    `;
+    if (journey.patient_user_id) {
+      await sql`
+        update profiles set display_name = ${data.profile.name}
+        where user_id = ${journey.patient_user_id}
+      `;
+    }
     return true;
   });
 
@@ -544,7 +568,7 @@ export const saveConsults = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const journey = await resolveWritableJourney(sql, context.userId, data.journeyId);
+    const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
     const consults = data.consults ?? parseJson(journey.consults, emptySnapshot().consults);
     const nutrition = data.nutrition ?? parseJson(journey.nutrition, emptySnapshot().nutrition);
     await sql`
@@ -554,10 +578,6 @@ export const saveConsults = createServerFn({ method: "POST" })
           updated_at = now()
       where id = ${journey.id}
     `;
-    const actor = await getProfile(sql, context.userId);
-    if (actor?.role === "patient") {
-      await notifyDoctor(sql, journey, "atualizou datas das consultas");
-    }
     return true;
   });
 
@@ -566,22 +586,44 @@ export const saveTasks = createServerFn({ method: "POST" })
   .validator((data: { journeyId?: string | null; tasks: Task[] }) => data)
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const journey = await resolveWritableJourney(sql, context.userId, data.journeyId);
+    const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
     await sql`
       update journeys
       set tasks = ${JSON.stringify(data.tasks)},
           updated_at = now()
       where id = ${journey.id}
     `;
-    const actor = await getProfile(sql, context.userId);
-    if (actor?.role === "patient") {
-      const done = data.tasks.filter((t) => t.done).map((t) => t.title).filter(Boolean);
-      const last = done[done.length - 1];
-      await notifyDoctor(
-        sql,
-        journey,
-        last ? `concluiu a tarefa: ${last}` : "atualizou as tarefas iniciais",
-      );
+    return true;
+  });
+
+export const updatePatientTask = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((data: { taskId: string; done?: boolean; meta?: TaskMeta }) => data)
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const journey = await resolvePatientJourney(sql, context.userId);
+    const tasks = parseJson<Task[]>(journey.tasks, []);
+    const current = tasks.find((task) => task.id === data.taskId);
+    if (!current) throw new Error("Tarefa não encontrada");
+
+    const next = tasks.map((task) =>
+      task.id === data.taskId
+        ? {
+            ...task,
+            done: data.done === undefined ? task.done : Boolean(data.done),
+            meta: data.meta ? { ...(task.meta ?? {}), ...data.meta } : task.meta,
+          }
+        : task,
+    );
+
+    await sql`
+      update journeys
+      set tasks = ${JSON.stringify(next)}, updated_at = now()
+      where id = ${journey.id}
+    `;
+
+    if (data.done === true && !current.done) {
+      await notifyDoctor(sql, journey, `concluiu a tarefa: ${current.title}`);
     }
     return true;
   });
@@ -591,7 +633,7 @@ export const savePlan = createServerFn({ method: "POST" })
   .validator((data: { journeyId?: string | null; plan: PlanConfig }) => data)
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const journey = await resolveWritableJourney(sql, context.userId, data.journeyId);
+    const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
     await sql`
       update journeys
       set plan = ${JSON.stringify(normalizePlan(data.plan))},
@@ -606,7 +648,7 @@ export const saveDayLog = createServerFn({ method: "POST" })
   .validator((data: { journeyId?: string | null; date: string; patch: DayLog }) => data)
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const journey = await resolveWritableJourney(sql, context.userId, data.journeyId);
+    const journey = await resolvePatientJourney(sql, context.userId);
     const existing = await sql<{ log: string }>`
       select log from day_logs where journey_id = ${journey.id} and day = ${data.date}
     `;
@@ -616,10 +658,7 @@ export const saveDayLog = createServerFn({ method: "POST" })
       values (${journey.id}, ${data.date}, ${JSON.stringify(next)})
       on conflict (journey_id, day) do update set log = excluded.log
     `;
-    const actor = await getProfile(sql, context.userId);
-    if (actor?.role === "patient") {
-      await notifyDoctor(sql, journey, summarizeDayPatch(data.date, data.patch));
-    }
+    await notifyDoctor(sql, journey, summarizeDayPatch(data.date, data.patch));
     return true;
   });
 
@@ -630,7 +669,7 @@ export const saveMonthNotes = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const journey = await resolveWritableJourney(sql, context.userId, data.journeyId);
+    const journey = await resolvePatientJourney(sql, context.userId);
     const existing = await sql<{ notes: string }>`
       select notes from month_notes
       where journey_id = ${journey.id} and month = ${data.month}
@@ -641,40 +680,8 @@ export const saveMonthNotes = createServerFn({ method: "POST" })
       values (${journey.id}, ${data.month}, ${JSON.stringify(next)})
       on conflict (journey_id, month) do update set notes = excluded.notes
     `;
-    const actor = await getProfile(sql, context.userId);
-    if (actor?.role === "patient") {
-      await notifyDoctor(sql, journey, `atualizou o resumo de ${data.month}`);
-    }
+    await notifyDoctor(sql, journey, `atualizou o resumo de ${data.month}`);
     return true;
-  });
-
-export const resetJourney = createServerFn({ method: "POST" })
-  .middleware([authMiddleware])
-  .validator((data: { journeyId?: string | null } | undefined) => data ?? {})
-  .handler(async ({ context, data }) => {
-    const sql = await getSql();
-    const profile = await getProfile(sql, context.userId);
-    if (!profile || profile.role !== "patient") {
-      throw new Error("Apenas o paciente pode zerar a própria jornada.");
-    }
-    const journey = await resolveWritableJourney(sql, context.userId, data.journeyId);
-    const seed = emptySnapshot();
-    await sql`delete from day_logs where journey_id = ${journey.id}`;
-    await sql`delete from month_notes where journey_id = ${journey.id}`;
-    await sql`
-      update journeys
-      set onboarded = false,
-          name = ${profile.display_name},
-          first_consult_date = '',
-          injection_weekday = null,
-          dose = '',
-          consults = ${JSON.stringify(seed.consults)},
-          nutrition = ${JSON.stringify(seed.nutrition)},
-          tasks = ${JSON.stringify(seed.tasks)},
-          updated_at = now()
-      where id = ${journey.id}
-    `;
-    return loadBootstrap(sql, context.userId, null);
   });
 
 export type { TaskMeta };
