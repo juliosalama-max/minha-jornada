@@ -62,6 +62,7 @@ const seed = (): JournalSnapshot => ({
   monthNotes: {},
   plan: emptyPlan(),
   journeyPlan: emptyJourneyPlan(),
+  publishedJourneyPlan: emptyJourneyPlan(),
   journeyMeta: {
     status: "draft",
     currentVersion: 0,
@@ -131,6 +132,7 @@ function applySnapshot(s: JournalSnapshot) {
     monthNotes: s.monthNotes,
     plan: s.plan ?? emptyPlan(),
     journeyPlan: s.journeyPlan ?? emptyJourneyPlan(),
+    publishedJourneyPlan: s.publishedJourneyPlan ?? s.journeyPlan ?? emptyJourneyPlan(),
     journeyMeta: s.journeyMeta ?? {
       status: "draft",
       currentVersion: 0,
