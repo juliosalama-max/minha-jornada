@@ -18,13 +18,14 @@ const NAV_PATIENT = [
   { to: "/hoje", label: "Hoje", icon: ClipboardCheck },
   { to: "/mes", label: "Evolução", icon: CalendarDays },
   { to: "/jornada", label: "Jornada", icon: Route },
-  { to: "/perfil", label: "Perfil", icon: UserRound },
+  { to: "/pendencias", label: "Pendências", icon: ClipboardCheck },
 ] as const;
 
 const NAV_DOCTOR = [
   { to: "/", label: "Início", icon: House },
   { to: "/mes", label: "Registros", icon: ClipboardCheck },
   { to: "/jornada", label: "Jornada", icon: Route },
+  { to: "/pendencias", label: "Pendências", icon: CalendarDays },
   { to: "/perfil", label: "Perfil", icon: UserRound },
 ] as const;
 
@@ -113,7 +114,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           className="fixed inset-x-0 bottom-0 z-40 border-t border-border/80 bg-card/95 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur-md md:hidden"
           aria-label="Principal"
         >
-          <ul className={cn("mx-auto grid max-w-lg px-1 pt-1", role === "doctor" ? "grid-cols-4" : "grid-cols-5")}>
+          <ul className="mx-auto grid max-w-lg grid-cols-5 px-1 pt-1">
             {nav.map((item) => {
               const active = pathname === item.to;
               const Icon = item.icon;
