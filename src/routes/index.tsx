@@ -22,6 +22,7 @@ import {
 import { formatLong } from "@/lib/calendar";
 import { EMERGENCY_COPY } from "@/lib/constants";
 import { useJournal } from "@/lib/journal-store";
+import type { JourneyPlanV2 } from "@/lib/types";
 
 export const Route = createFileRoute("/")({ component: Home });
 
@@ -227,7 +228,7 @@ function DoctorHome() {
     journeyPlan.appointments.length > 0;
   const openTasks = tasks.filter((task) => !task.done);
   const pendingCount = hasVersionedActions
-    ? openCareActionCount(journeyPlan, actionProgress)
+    ? openCareActionCount(journeyPlan, actionProgress, "doctor")
     : openTasks.length;
   const nextV2Appointment = findNextAppointment(journeyPlan, new Date());
   const nextConsult = nextV2Appointment ? null : findNextConsult(consults, new Date());
@@ -433,7 +434,7 @@ function findNextConsult(
 }
 
 function findNextAppointment(
-  plan: ReturnType<typeof useJournal.getState>["journeyPlan"],
+  plan: JourneyPlanV2,
   today: Date,
 ) {
   const todayKey = format(today, "yyyy-MM-dd");
