@@ -188,6 +188,65 @@ export type JourneyPriority = {
   reviewDate: string;
 };
 
+export type JourneyTaskCategory =
+  | "exam"
+  | "appointment"
+  | "medication"
+  | "food"
+  | "movement"
+  | "sleep"
+  | "document"
+  | "other";
+
+export type JourneyTaskResponsible =
+  | "patient"
+  | "doctor"
+  | "team"
+  | "nutritionist"
+  | "other";
+
+export type JourneyTask = {
+  id: string;
+  title: string;
+  description: string;
+  category: JourneyTaskCategory;
+  responsible: JourneyTaskResponsible;
+  dueDate: string;
+  priority: "normal" | "important";
+  visibleToPatient: boolean;
+};
+
+export type JourneyExam = {
+  id: string;
+  title: string;
+  instructions: string;
+  requestedDate: string;
+  dueDate: string;
+  visibleToPatient: boolean;
+};
+
+export type JourneyAppointment = {
+  id: string;
+  type: "doctor" | "nutrition" | "psychology" | "nursing" | "other";
+  professional: string;
+  date: string;
+  offsetDays: number | null;
+  mode: "in_person" | "online" | "unspecified";
+  notes: string;
+  status: "planned" | "scheduled" | "completed" | "cancelled";
+  visibleToPatient: boolean;
+};
+
+export type JourneyActionProgress = {
+  actionType: "task" | "exam";
+  actionId: string;
+  status: "pending" | "scheduled" | "completed" | "cancelled";
+  scheduledDate: string;
+  note: string;
+  completedAt: string | null;
+  updatedAt: string;
+};
+
 export type JourneyPlanV2 = {
   schemaVersion: 2;
   title: string;
@@ -199,6 +258,9 @@ export type JourneyPlanV2 = {
   objective: string;
   priorities: JourneyPriority[];
   modules: JourneyModule[];
+  tasks: JourneyTask[];
+  exams: JourneyExam[];
+  appointments: JourneyAppointment[];
   legacy: PlanConfig;
 };
 
@@ -246,6 +308,7 @@ export type JournalSnapshot = {
   journeyPlan: JourneyPlanV2;
   journeyMeta: JourneyMeta;
   journeyResponses: JourneyModuleResponse[];
+  journeyActionProgress: JourneyActionProgress[];
 };
 
 export type Role = "patient" | "doctor";
