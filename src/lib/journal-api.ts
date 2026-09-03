@@ -12,6 +12,7 @@ import type {
   JournalSnapshot,
   JourneyAnswerValue,
   JourneyMeta,
+  JourneyModule,
   JourneyModuleResponse,
   JourneyPlanV2,
   MedicalConsult,
@@ -83,6 +84,102 @@ function journeyMeta(row: JourneyRow): JourneyMeta {
     publishedAt: row.published_at,
     draftUpdatedAt: row.plan_updated_at,
   };
+}
+
+function questionConditionMatches(
+  condition: JourneyModule["questions"][number]["condition"],
+  answers: Record<string, JourneyAnswerValue>,
+): boolean {
+  if (!condition) return true;
+  const current = answers[condition.questionId];
+  if (condition.operator === "equals") return current === condition.value;
+  if (condition.operator === "not_equals") {
+    return current !== undefined && current !== condition.value;
+  }
+  if (condition.operator === "includes") {
+    if (Array.isArray(current)) return current.includes(String(condition.value));
+    if (typeof current === "string") return current.includes(String(condition.value));
+    return false;
+  }
+  return true;
+}
+
+function sanitizeModuleAnswers(
+  module: JourneyModule,
+  rawAnswers: Record<string, JourneyAnswerValue>,
+): Record<string, JourneyAnswerValue> {
+  const answers: Record<string, JourneyAnswerValue> = {};
+
+  for (const question of module.questions) {
+    if (!questionConditionMatches(question.condition, answers)) continue;
+    const value = rawAnswers[question.id];
+    const empty =
+      value === undefined ||
+      value === null ||
+      value === "" ||
+      (Array.isArray(value) && value.length === 0);
+
+    if (empty) {
+      if (question.required) {
+        throw new Error(`Preencha o campo obrigatório: ${question.label}`);
+      }
+      continue;
+    }
+
+    if (question.type === "boolean" || question.type === "event") {
+      if (typeof value !== "boolean") {
+        throw new Error(`Resposta inválida: ${question.label}`);
+      }
+      answers[question.id] = value;
+      continue;
+    }
+
+    if (question.type === "single_choice" || question.type === "emotion") {
+      const allowed = new Set((question.options ?? []).map((option) => option.id));
+      if (typeof value !== "string" || !allowed.has(value)) {
+        throw new Error(`Opção inválida: ${question.label}`);
+      }
+      answers[question.id] = value;
+      continue;
+    }
+
+    if (question.type === "multiple_choice") {
+      const allowed = new Set((question.options ?? []).map((option) => option.id));
+      if (!Array.isArray(value) || !value.every((item) => allowed.has(item))) {
+        throw new Error(`Opções inválidas: ${question.label}`);
+      }
+      answers[question.id] = value;
+      continue;
+    }
+
+    if (
+      question.type === "scale" ||
+      question.type === "number" ||
+      question.type === "duration"
+    ) {
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        throw new Error(`Número inválido: ${question.label}`);
+      }
+      if (question.min != null && value < question.min) {
+        throw new Error(`Valor abaixo do mínimo: ${question.label}`);
+      }
+      if (question.max != null && value > question.max) {
+        throw new Error(`Valor acima do máximo: ${question.label}`);
+      }
+      if (question.type === "duration" && value < 0) {
+        throw new Error(`Duração inválida: ${question.label}`);
+      }
+      answers[question.id] = value;
+      continue;
+    }
+
+    if (typeof value !== "string") {
+      throw new Error(`Texto inválido: ${question.label}`);
+    }
+    answers[question.id] = value.slice(0, 5000);
+  }
+
+  return answers;
 }
 
 function emptySnapshot(): JournalSnapshot {
@@ -845,20 +942,7 @@ export const saveJourneyResponse = createServerFn({ method: "POST" })
       throw new Error("Este módulo não está ativo na Jornada publicada.");
     }
 
-    const allowedQuestionIds = new Set(module.questions.map((question) => question.id));
-    const sanitizedAnswers: Record<string, JourneyAnswerValue> = {};
-    for (const [questionId, value] of Object.entries(data.answers ?? {})) {
-      if (!allowedQuestionIds.has(questionId)) continue;
-      if (
-        typeof value === "string" ||
-        typeof value === "number" ||
-        typeof value === "boolean" ||
-        value === null ||
-        (Array.isArray(value) && value.every((item) => typeof item === "string"))
-      ) {
-        sanitizedAnswers[questionId] = value;
-      }
-    }
+    const sanitizedAnswers = sanitizeModuleAnswers(module, data.answers ?? {});
 
     const existingRows = await sql<{
       id: string;
