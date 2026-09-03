@@ -72,15 +72,39 @@ export function sweetsThirtyDayTemplate(): JourneyPlanV2 {
           },
           {
             id: id("question"),
+            label: "Quanto de fome você percebia antes?",
+            type: "scale",
+            required: false,
+            min: 0,
+            max: 10,
+            step: 1,
+            condition: {
+              questionId: frequencyQuestionId,
+              operator: "not_equals",
+              value: "none",
+            },
+          },
+          {
+            id: id("question"),
             label: "O que estava acontecendo naquele momento?",
             type: "short_text",
             required: false,
+            condition: {
+              questionId: frequencyQuestionId,
+              operator: "not_equals",
+              value: "none",
+            },
           },
           {
             id: id("question"),
             label: "Como você ficou depois?",
             type: "emotion",
             required: false,
+            condition: {
+              questionId: frequencyQuestionId,
+              operator: "not_equals",
+              value: "none",
+            },
             options: [
               { id: "satisfied", label: "Satisfeita(o)" },
               { id: "indifferent", label: "Igual" },
@@ -94,6 +118,11 @@ export function sweetsThirtyDayTemplate(): JourneyPlanV2 {
             label: "Houve sensação de perda de controle?",
             type: "boolean",
             required: false,
+            condition: {
+              questionId: frequencyQuestionId,
+              operator: "not_equals",
+              value: "none",
+            },
           },
         ],
       },
