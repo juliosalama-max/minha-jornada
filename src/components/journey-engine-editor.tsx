@@ -506,7 +506,8 @@ function QuestionEditor({
   const controlQuestion = questions.find(
     (item) => item.id === question.condition?.questionId,
   );
-  const possibleControls = questions.filter((item) => item.id !== question.id);
+  const currentIndex = questions.findIndex((item) => item.id === question.id);
+  const possibleControls = currentIndex > 0 ? questions.slice(0, currentIndex) : [];
   return (
     <div className="grid gap-3 rounded-lg bg-secondary/40 p-3 sm:grid-cols-[1fr_180px_auto]">
       <Input
