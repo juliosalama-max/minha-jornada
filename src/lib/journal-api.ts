@@ -10,6 +10,8 @@ import type {
   DayLog,
   DoctorNotice,
   JournalSnapshot,
+  JourneyMeta,
+  JourneyPlanV2,
   MedicalConsult,
   MonthNotes,
   NutritionConsult,
@@ -22,6 +24,11 @@ import type {
 } from "@/lib/types";
 import { summarizeDayPatch } from "@/lib/notice-copy";
 import { emptyPlan, normalizePlan } from "@/lib/plan-templates";
+import {
+  emptyJourneyPlan,
+  normalizeJourneyPlan,
+  withLegacyPlan,
+} from "@/lib/journey-plan";
 
 type JourneyRow = {
   id: string;
@@ -37,6 +44,12 @@ type JourneyRow = {
   nutrition: string;
   tasks: string;
   plan: string;
+  journey_status: "draft" | "published" | "in_review" | "completed" | "archived";
+  draft_plan: string;
+  published_plan: string;
+  current_version: number;
+  published_at: string | null;
+  plan_updated_at: string | null;
 };
 
 function parseJson<T>(raw: string | null | undefined, fallback: T): T {
@@ -50,6 +63,23 @@ function parseJson<T>(raw: string | null | undefined, fallback: T): T {
 
 function parsePlan(raw: string | null | undefined): PlanConfig {
   return normalizePlan(parseJson<Partial<PlanConfig>>(raw, {}));
+}
+
+function parseJourneyPlan(raw: string | null | undefined, legacyRaw?: string | null): JourneyPlanV2 {
+  const parsed = parseJson<unknown>(raw, null);
+  if (parsed && typeof parsed === "object") {
+    return normalizeJourneyPlan(parsed);
+  }
+  return normalizeJourneyPlan(parseJson<Partial<PlanConfig>>(legacyRaw, {}));
+}
+
+function journeyMeta(row: JourneyRow): JourneyMeta {
+  return {
+    status: row.journey_status,
+    currentVersion: Number(row.current_version || 0),
+    publishedAt: row.published_at,
+    draftUpdatedAt: row.plan_updated_at,
+  };
 }
 
 function emptySnapshot(): JournalSnapshot {
@@ -67,6 +97,13 @@ function emptySnapshot(): JournalSnapshot {
     days: {},
     monthNotes: {},
     plan: emptyPlan(),
+    journeyPlan: emptyJourneyPlan(),
+    journeyMeta: {
+      status: "draft",
+      currentVersion: 0,
+      publishedAt: null,
+      draftUpdatedAt: null,
+    },
   };
 }
 
@@ -79,7 +116,11 @@ function rowProfile(row: JourneyRow): Profile {
   };
 }
 
-async function loadSnapshot(sql: Sql, journey: JourneyRow): Promise<JournalSnapshot> {
+async function loadSnapshot(
+  sql: Sql,
+  journey: JourneyRow,
+  view: "doctor" | "patient",
+): Promise<JournalSnapshot> {
   const dayRows = await sql<{ day: string; log: string }>`
     select day, log from day_logs where journey_id = ${journey.id}
   `;
@@ -90,6 +131,13 @@ async function loadSnapshot(sql: Sql, journey: JourneyRow): Promise<JournalSnaps
   for (const r of dayRows) days[r.day] = parseJson<DayLog>(r.log, {});
   const monthNotes: Record<string, MonthNotes> = {};
   for (const r of noteRows) monthNotes[r.month] = parseJson<MonthNotes>(r.notes, {});
+
+  const source =
+    view === "doctor"
+      ? journey.draft_plan || journey.plan
+      : journey.published_plan || journey.plan;
+  const journeyPlan = parseJourneyPlan(source, journey.plan);
+
   return {
     onboarded: Boolean(journey.onboarded),
     profile: rowProfile(journey),
@@ -98,7 +146,9 @@ async function loadSnapshot(sql: Sql, journey: JourneyRow): Promise<JournalSnaps
     tasks: parseJson<Task[]>(journey.tasks, emptySnapshot().tasks),
     days,
     monthNotes,
-    plan: parsePlan(journey.plan),
+    plan: journeyPlan.legacy,
+    journeyPlan,
+    journeyMeta: journeyMeta(journey),
   };
 }
 
@@ -118,14 +168,19 @@ async function createPatientJourney(sql: Sql, userId: string, name: string) {
       await sql`
         insert into journeys (
           id, patient_user_id, invite_code, onboarded, name,
-          first_consult_date, injection_weekday, dose, consults, nutrition, tasks, plan
+          first_consult_date, injection_weekday, dose, consults, nutrition, tasks, plan,
+          journey_status, draft_plan, published_plan, current_version
         ) values (
           ${id}, ${userId}, ${invite}, false, ${name},
           '', null, '',
           ${JSON.stringify(seed.consults)},
           ${JSON.stringify(seed.nutrition)},
           ${JSON.stringify(seed.tasks)},
-          ${JSON.stringify(seed.plan)}
+          ${JSON.stringify(seed.plan)},
+          'draft',
+          ${JSON.stringify(seed.journeyPlan)},
+          '{}',
+          0
         )
       `;
       const rows = await sql<JourneyRow>`select * from journeys where id = ${id}`;
@@ -271,7 +326,7 @@ async function loadBootstrap(
       journeyId: journey.id,
       inviteCode: journey.invite_code,
       doctorName: await doctorNameFor(sql, journey.doctor_user_id),
-      snapshot: await loadSnapshot(sql, journey),
+      snapshot: await loadSnapshot(sql, journey, "patient"),
     };
   }
 
@@ -286,6 +341,8 @@ async function loadBootstrap(
     inviteCode: r.invite_code,
     onboarded: Boolean(r.onboarded),
     pending: !r.patient_user_id,
+    journeyStatus: r.journey_status,
+    currentVersion: Number(r.current_version || 0),
   }));
 
   let active: JourneyRow | undefined;
@@ -300,7 +357,7 @@ async function loadBootstrap(
     journeyId: active?.id ?? null,
     patients,
     doctorName: profile.display_name,
-    snapshot: active ? await loadSnapshot(sql, active) : null,
+    snapshot: active ? await loadSnapshot(sql, active, "doctor") : null,
     inviteCode: active?.invite_code ?? null,
     patientName: active?.name ?? null,
     notices: await loadNotices(sql, userId),
@@ -395,6 +452,9 @@ async function claimJourney(sql: Sql, userId: string, code: string, displayName?
   if (journey.patient_user_id && journey.patient_user_id !== userId) {
     throw new Error("Este código já foi usado por outro paciente.");
   }
+  if (journey.journey_status === "draft" || journey.current_version < 1) {
+    throw new Error("A Jornada ainda não foi publicada pela equipe.");
+  }
   const name = journey.name || displayName || "";
   await sql`
     update journeys
@@ -432,14 +492,20 @@ export const createDoctorPlan = createServerFn({ method: "POST" })
         await sql`
           insert into journeys (
             id, patient_user_id, doctor_user_id, invite_code, onboarded, name,
-            first_consult_date, injection_weekday, dose, consults, nutrition, tasks, plan
+            first_consult_date, injection_weekday, dose, consults, nutrition, tasks, plan,
+            journey_status, draft_plan, published_plan, current_version, plan_updated_at
           ) values (
-            ${id}, null, ${context.userId}, ${invite}, true, ${name},
+            ${id}, null, ${context.userId}, ${invite}, false, ${name},
             ${first}, null, '',
             ${JSON.stringify(consults)},
             ${JSON.stringify(seed.nutrition)},
             ${JSON.stringify(seed.tasks)},
-            ${JSON.stringify(seed.plan)}
+            ${JSON.stringify(seed.plan)},
+            'draft',
+            ${JSON.stringify(seed.journeyPlan)},
+            '{}',
+            0,
+            now()
           )
         `;
         return loadBootstrap(sql, context.userId, id);
@@ -634,13 +700,92 @@ export const savePlan = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+    const legacy = normalizePlan(data.plan);
+    const currentDraft = parseJourneyPlan(journey.draft_plan, journey.plan);
+    const nextDraft = withLegacyPlan(currentDraft, legacy);
+    const nextStatus =
+      journey.current_version > 0 && journey.journey_status !== "draft"
+        ? "in_review"
+        : "draft";
+
     await sql`
       update journeys
-      set plan = ${JSON.stringify(normalizePlan(data.plan))},
+      set plan = ${JSON.stringify(legacy)},
+          draft_plan = ${JSON.stringify(nextDraft)},
+          journey_status = ${nextStatus},
+          plan_updated_at = now(),
           updated_at = now()
       where id = ${journey.id}
     `;
     return true;
+  });
+
+export const saveJourneyDraft = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((data: { journeyId?: string | null; plan: JourneyPlanV2 }) => data)
+  .handler(async ({ context, data }): Promise<JournalSnapshot> => {
+    const sql = await getSql();
+    const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+    const next = normalizeJourneyPlan(data.plan);
+    const nextStatus =
+      journey.current_version > 0 && journey.journey_status !== "draft"
+        ? "in_review"
+        : "draft";
+
+    await sql`
+      update journeys
+      set draft_plan = ${JSON.stringify(next)},
+          plan = ${JSON.stringify(next.legacy)},
+          journey_status = ${nextStatus},
+          plan_updated_at = now(),
+          updated_at = now()
+      where id = ${journey.id}
+    `;
+
+    const rows = await sql<JourneyRow>`select * from journeys where id = ${journey.id}`;
+    return loadSnapshot(sql, rows[0]!, "doctor");
+  });
+
+export const publishJourney = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((data: { journeyId?: string | null }) => data)
+  .handler(async ({ context, data }): Promise<JournalSnapshot> => {
+    const sql = await getSql();
+    const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+    const draft = normalizeJourneyPlan(
+      parseJson<unknown>(journey.draft_plan, parseJson<unknown>(journey.plan, {})),
+    );
+    const version = Number(journey.current_version || 0) + 1;
+    const publishedAt = new Date().toISOString();
+
+    await sql`
+      insert into journey_versions (
+        id, journey_id, version, plan, published_by_user_id, published_at
+      ) values (
+        ${crypto.randomUUID()},
+        ${journey.id},
+        ${version},
+        ${JSON.stringify(draft)},
+        ${context.userId},
+        ${publishedAt}
+      )
+    `;
+
+    await sql`
+      update journeys
+      set published_plan = ${JSON.stringify(draft)},
+          draft_plan = ${JSON.stringify(draft)},
+          plan = ${JSON.stringify(draft.legacy)},
+          journey_status = 'published',
+          current_version = ${version},
+          published_at = ${publishedAt},
+          plan_updated_at = now(),
+          updated_at = now()
+      where id = ${journey.id}
+    `;
+
+    const rows = await sql<JourneyRow>`select * from journeys where id = ${journey.id}`;
+    return loadSnapshot(sql, rows[0]!, "doctor");
   });
 
 export const saveDayLog = createServerFn({ method: "POST" })

@@ -1,4 +1,5 @@
 import { AEROBIC_OPTIONS, MONTHS_PT, STRENGTH_OPTIONS, SYMPTOMS } from "@/lib/constants";
+import { JourneyEngineEditor } from "@/components/journey-engine-editor";
 import { useJournal } from "@/lib/journal-store";
 import type { PlanConfig, SymptomCode, Task } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -45,8 +46,15 @@ export function PlanEditor() {
         </p>
       </header>
 
+      <JourneyEngineEditor />
+
+      <div className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+        Os controles abaixo são a camada de compatibilidade com os registros atuais.
+        Eles serão substituídos gradualmente pelos módulos V2 sem perder o histórico.
+      </div>
+
       <section className="space-y-3 rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
-        <h2 className="font-display text-lg font-semibold">Jornada personalizada</h2>
+        <h2 className="font-display text-lg font-semibold">Compatibilidade com o acompanhamento atual</h2>
         <div className="space-y-1.5">
           <Label htmlFor="mot">Motivação</Label>
           <Textarea

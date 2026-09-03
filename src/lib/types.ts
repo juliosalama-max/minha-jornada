@@ -96,6 +96,124 @@ export type PlanConfig = {
   social: { enabled: boolean };
 };
 
+export type JourneyStatus =
+  | "draft"
+  | "published"
+  | "in_review"
+  | "completed"
+  | "archived";
+
+export type JourneyFrequencyKind =
+  | "daily"
+  | "weekly"
+  | "selected_days"
+  | "monthly"
+  | "event_based"
+  | "one_time";
+
+export type JourneyFrequency = {
+  kind: JourneyFrequencyKind;
+  daysOfWeek?: number[];
+  timesPerWeek?: number;
+};
+
+export type JourneyQuestionType =
+  | "boolean"
+  | "single_choice"
+  | "multiple_choice"
+  | "scale"
+  | "number"
+  | "duration"
+  | "short_text"
+  | "long_text"
+  | "emotion"
+  | "event";
+
+export type JourneyQuestionOption = {
+  id: string;
+  label: string;
+};
+
+export type JourneyQuestionCondition = {
+  questionId: string;
+  operator: "equals" | "not_equals" | "includes";
+  value: string | number | boolean;
+};
+
+export type JourneyQuestion = {
+  id: string;
+  label: string;
+  type: JourneyQuestionType;
+  required: boolean;
+  options?: JourneyQuestionOption[];
+  min?: number;
+  max?: number;
+  step?: number;
+  condition?: JourneyQuestionCondition;
+};
+
+export type JourneyModuleType =
+  | "medication"
+  | "food"
+  | "movement"
+  | "sleep"
+  | "cpap"
+  | "symptoms"
+  | "eating_behavior"
+  | "stress"
+  | "social"
+  | "spirituality"
+  | "questionnaire"
+  | "custom";
+
+export type JourneyModule = {
+  id: string;
+  type: JourneyModuleType;
+  title: string;
+  enabled: boolean;
+  instructions: string;
+  frequency: JourneyFrequency;
+  startDate: string;
+  endDate: string;
+  reviewDate: string;
+  required: boolean;
+  questions: JourneyQuestion[];
+};
+
+export type JourneyPriority = {
+  id: string;
+  title: string;
+  description: string;
+  tracking: string;
+  reviewDate: string;
+};
+
+export type JourneyPlanV2 = {
+  schemaVersion: 2;
+  title: string;
+  startDate: string;
+  durationDays: number | null;
+  reviewDate: string;
+  motivation: string;
+  patientValues: string;
+  objective: string;
+  priorities: JourneyPriority[];
+  modules: JourneyModule[];
+  legacy: PlanConfig;
+};
+
+export type JourneyMeta = {
+  status: JourneyStatus;
+  currentVersion: number;
+  publishedAt: string | null;
+  draftUpdatedAt: string | null;
+};
+
+export type JourneyVersionSummary = {
+  version: number;
+  publishedAt: string;
+};
+
 export type MonthNotes = {
   worstSymptom?: string;
   walkFeeling?: string;
@@ -114,6 +232,8 @@ export type JournalSnapshot = {
   days: Record<string, DayLog>;
   monthNotes: Record<string, MonthNotes>;
   plan: PlanConfig;
+  journeyPlan: JourneyPlanV2;
+  journeyMeta: JourneyMeta;
 };
 
 export type Role = "patient" | "doctor";
@@ -124,6 +244,8 @@ export type PatientSummary = {
   inviteCode: string;
   onboarded: boolean;
   pending: boolean;
+  journeyStatus?: JourneyStatus;
+  currentVersion?: number;
 };
 
 export type DoctorNotice = {
