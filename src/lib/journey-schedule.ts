@@ -1,6 +1,7 @@
 import {
   endOfMonth,
   endOfWeek,
+  format,
   isAfter,
   isBefore,
   parseISO,
@@ -25,7 +26,7 @@ export function responseMatchesPeriod(
 ): boolean {
   const occurred = parseISO(response.occurredOn);
   if (module.frequency.kind === "daily" || module.frequency.kind === "selected_days") {
-    return response.occurredOn === date.toISOString().slice(0, 10);
+    return response.occurredOn === format(date, "yyyy-MM-dd");
   }
   if (module.frequency.kind === "weekly") {
     const start = startOfWeek(date, { weekStartsOn: 1 });
@@ -36,7 +37,7 @@ export function responseMatchesPeriod(
     return !isBefore(occurred, startOfMonth(date)) && !isAfter(occurred, endOfMonth(date));
   }
   if (module.frequency.kind === "one_time") return true;
-  return response.occurredOn === date.toISOString().slice(0, 10);
+  return response.occurredOn === format(date, "yyyy-MM-dd");
 }
 
 export function moduleIsDue(
@@ -72,9 +73,13 @@ export function completedModulesForDate(
 ): JourneyModule[] {
   return modules.filter((module) => {
     if (!module.enabled || module.frequency.kind === "event_based") return false;
-    return responses
+    const matching = responses
       .filter((response) => response.moduleId === module.id)
-      .some((response) => responseMatchesPeriod(module, response, date));
+      .filter((response) => responseMatchesPeriod(module, response, date));
+    if (module.frequency.kind === "one_time") {
+      return matching.some((response) => response.occurredOn === format(date, "yyyy-MM-dd"));
+    }
+    return matching.length > 0;
   });
 }
 
