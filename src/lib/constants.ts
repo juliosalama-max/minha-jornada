@@ -58,103 +58,11 @@ export const SYMPTOMS: { code: SymptomCode; label: string }[] = [
   { code: "O", label: "Outro" },
 ];
 
-export const DEFAULT_CONSULTS: MedicalConsult[] = [
-  {
-    stage: 1,
-    period: "Agosto",
-    focus: "Avaliação inicial e início do plano",
-    date: "",
-  },
-  {
-    stage: 2,
-    period: "Setembro",
-    focus: "Adaptação e resposta inicial",
-    date: "",
-  },
-  {
-    stage: 3,
-    period: "Outubro",
-    focus: "Rotina alimentar, sono e movimento",
-    date: "",
-  },
-  {
-    stage: 4,
-    period: "Novembro",
-    focus: "Composição corporal e capacidade funcional",
-    date: "",
-  },
-  {
-    stage: 5,
-    period: "Dezembro",
-    focus: "Balanço, festas e continuidade até fevereiro",
-    date: "",
-  },
-];
+export const DEFAULT_CONSULTS: MedicalConsult[] = [];
 
-export const DEFAULT_NUTRITION: NutritionConsult[] = [
-  { index: 1, date: "" },
-  { index: 2, date: "" },
-  { index: 3, date: "" },
-];
+export const DEFAULT_NUTRITION: NutritionConsult[] = [];
 
-export const DEFAULT_TASKS: Task[] = [
-  {
-    id: "shay",
-    category: "agenda",
-    title: "Marcar com Shay as consultas de setembro, outubro, novembro e dezembro.",
-    done: false,
-  },
-  {
-    id: "nutri",
-    category: "agenda",
-    title: "Marcar a primeira consulta com a nutricionista e combinar as duas seguintes.",
-    done: false,
-  },
-  {
-    id: "polissonografia",
-    category: "exames",
-    title: "Realizar a polissonografia solicitada.",
-    done: false,
-    meta: { date: "", local: "" },
-  },
-  {
-    id: "laudo-sono",
-    category: "exames",
-    title: "Levar o laudo da polissonografia à consulta médica.",
-    done: false,
-  },
-  {
-    id: "cardio",
-    category: "exames",
-    title: "Realizar a avaliação e os exames cardiológicos solicitados.",
-    done: false,
-    meta: { exams: "", dates: "", delivered: "false" },
-  },
-  {
-    id: "laudo-cardio",
-    category: "exames",
-    title: "Levar os laudos cardiológicos à consulta antes de aumentar a intensidade dos exercícios.",
-    done: false,
-  },
-  {
-    id: "figado",
-    category: "docs",
-    title: "Levar o laudo completo da elastografia hepática e do ultrassom abdominal.",
-    done: false,
-  },
-  {
-    id: "meds",
-    category: "docs",
-    title: "Confirmar a lista e os horários de todas as medicações em uso.",
-    done: false,
-  },
-  {
-    id: "aplicacao",
-    category: "docs",
-    title: "Anotar o dia fixo, a dose aplicada e possíveis efeitos colaterais.",
-    done: false,
-  },
-];
+export const DEFAULT_TASKS: Task[] = [];
 
 export const TASK_CATEGORY_LABEL: Record<string, string> = {
   agenda: "Agendamentos do acompanhamento",
@@ -173,12 +81,7 @@ export const BIOIMPEDANCE_PREP =
 export const EMERGENCY_COPY =
   "Não espere a próxima consulta se tiver dor no peito, desmaio, falta de ar intensa ou progressiva, vômitos persistentes, dificuldade para se hidratar ou dor abdominal forte. Procure avaliação médica.";
 
-export const INCLUDED = [
-  "5 consultas médicas, incluindo a inicial, todas com bioimpedância.",
-  "4 retornos mensais: setembro, outubro, novembro e dezembro.",
-  "3 consultas com a nutricionista, com datas combinadas.",
-  "Revisão progressiva da medicação, dos sintomas, do sono, da alimentação e da atividade física.",
-];
+export const INCLUDED: string[] = [];
 
 export const CARE_FOCUS =
-  "Reduzir riscos à saúde, proteger o fígado, melhorar o sono e a disposição, preservar a massa muscular e tornar a rotina mais consistente.";
+  "Acompanhar, de forma individualizada, os pontos definidos na sua Jornada.";

@@ -12,7 +12,6 @@ import {
   linkPatientByCode,
   listDoctorNotices,
   markNoticesRead as markNoticesReadFn,
-  resetJourney,
   saveConsults,
   saveDayLog,
   saveMonthNotes,
@@ -20,6 +19,7 @@ import {
   savePlan,
   saveProfile,
   saveTasks,
+  updatePatientTask,
   type Bootstrap,
 } from "./journal-api";
 import { emptyPlan } from "./plan-templates";
@@ -83,7 +83,6 @@ type JournalState = JournalSnapshot & {
   updateTaskMeta: (id: string, meta: TaskMeta) => void;
   patchDay: (date: string, patch: Partial<DayLog>) => void;
   setMonthNotes: (month: string, patch: Partial<MonthNotes>) => void;
-  resetAll: () => void;
   clear: () => void;
   refreshNotices: () => Promise<void>;
   markNoticesRead: (ids?: string[]) => Promise<void>;
@@ -268,11 +267,18 @@ export const useJournal = create<JournalState>((set, get) => ({
     void saveTasks({ data: { journeyId: s.journeyId, tasks } });
   },
   toggleTask: (id) => {
+    const current = get().tasks.find((task) => task.id === id);
+    if (!current) return;
+    const done = !current.done;
     set((s) => ({
-      tasks: s.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),
+      tasks: s.tasks.map((t) => (t.id === id ? { ...t, done } : t)),
     }));
     const s = get();
-    void saveTasks({ data: { journeyId: s.journeyId, tasks: s.tasks } });
+    if (s.role === "patient") {
+      void updatePatientTask({ data: { taskId: id, done } });
+    } else {
+      void saveTasks({ data: { journeyId: s.journeyId, tasks: s.tasks } });
+    }
   },
   updateTaskMeta: (id, meta) => {
     set((s) => ({
@@ -281,7 +287,11 @@ export const useJournal = create<JournalState>((set, get) => ({
       ),
     }));
     const s = get();
-    void saveTasks({ data: { journeyId: s.journeyId, tasks: s.tasks } });
+    if (s.role === "patient") {
+      void updatePatientTask({ data: { taskId: id, meta } });
+    } else {
+      void saveTasks({ data: { journeyId: s.journeyId, tasks: s.tasks } });
+    }
   },
   patchDay: (date, patch) => {
     set((s) => {
@@ -301,11 +311,6 @@ export const useJournal = create<JournalState>((set, get) => ({
     }));
     const s = get();
     void saveMonthNotes({ data: { journeyId: s.journeyId, month, patch } });
-  },
-  resetAll: () => {
-    void resetJourney({ data: { journeyId: get().journeyId } }).then((b) => {
-      get().applyBootstrap(b);
-    });
   },
   clear: () =>
     set({

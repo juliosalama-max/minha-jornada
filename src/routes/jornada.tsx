@@ -30,8 +30,6 @@ function JornadaPage() {
 function PatientJornada() {
   const consults = useJournal((s) => s.consults);
   const nutrition = useJournal((s) => s.nutrition);
-  const setConsultDate = useJournal((s) => s.setConsultDate);
-  const setNutritionDate = useJournal((s) => s.setNutritionDate);
   const tasks = useJournal((s) => s.tasks);
   const plan = useJournal((s) => s.plan);
   const toggleTask = useJournal((s) => s.toggleTask);
@@ -135,21 +133,12 @@ function PatientJornada() {
                     {i < consults.length - 1 && c.date && <Badge variant="mint">Agendada</Badge>}
                   </div>
                   {c.focus && <p className="text-sm text-muted-foreground">{c.focus}</p>}
-                  <Label htmlFor={`c-${c.stage}`} className="mt-3 block text-xs">
-                    Data
-                  </Label>
-                  <Input
-                    id={`c-${c.stage}`}
-                    type="date"
-                    className="mt-1"
-                    value={c.date}
-                    onChange={(e) => setConsultDate(c.stage, e.target.value)}
-                  />
-                  {c.date && (
-                    <p className="mt-1 text-xs capitalize text-muted-foreground">
-                      {format(parseISO(c.date), "EEEE, d 'de' MMMM", { locale: ptBR })}
-                    </p>
-                  )}
+                  <p className="mt-3 text-xs text-muted-foreground">Data</p>
+                  <p className="mt-1 text-sm font-medium capitalize">
+                    {c.date
+                      ? format(parseISO(c.date), "EEEE, d 'de' MMMM", { locale: ptBR })
+                      : "A definir pela equipe"}
+                  </p>
                 </div>
               </div>
             </li>
@@ -163,14 +152,12 @@ function PatientJornada() {
           <div className="grid gap-3">
             {nutrition.map((n) => (
               <div key={n.index} className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
-                <Label htmlFor={`n-${n.index}`}>{n.index}ª consulta</Label>
-                <Input
-                  id={`n-${n.index}`}
-                  type="date"
-                  className="mt-2"
-                  value={n.date}
-                  onChange={(e) => setNutritionDate(n.index, e.target.value)}
-                />
+                <p className="text-sm font-medium">{n.index}ª consulta</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {n.date
+                    ? format(parseISO(n.date), "d 'de' MMMM 'de' yyyy", { locale: ptBR })
+                    : "A definir pela equipe"}
+                </p>
               </div>
             ))}
           </div>
