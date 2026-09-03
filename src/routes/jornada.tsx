@@ -32,6 +32,8 @@ function PatientJornada() {
   const nutrition = useJournal((s) => s.nutrition);
   const tasks = useJournal((s) => s.tasks);
   const plan = useJournal((s) => s.plan);
+  const journeyPlan = useJournal((s) => s.journeyPlan);
+  const journeyMeta = useJournal((s) => s.journeyMeta);
   const toggleTask = useJournal((s) => s.toggleTask);
   const updateTaskMeta = useJournal((s) => s.updateTaskMeta);
   const done = tasks.filter((t) => t.done).length;
@@ -41,16 +43,65 @@ function PatientJornada() {
     <div className="space-y-6">
       <header>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-          Bem-vindo ao Método AGIR
+          Sua Jornada · versão {journeyMeta.currentVersion || 1}
         </p>
         <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">
-          Como será nossa jornada
+          {journeyPlan.title || "Como será nossa jornada"}
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           Este é o mapa montado para você. Use os registros com sinceridade: eles
           não medem perfeição, mostram o que ajustar.
         </p>
       </header>
+
+      {journeyPlan.objective && (
+        <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
+            Objetivo deste ciclo
+          </p>
+          <p className="mt-1.5 text-sm leading-relaxed">{journeyPlan.objective}</p>
+        </section>
+      )}
+
+      {journeyPlan.priorities.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="font-display text-lg font-semibold">Prioridades atuais</h2>
+          {journeyPlan.priorities.map((priority, index) => (
+            <div key={priority.id} className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
+              <p className="text-xs font-semibold text-primary">Prioridade {index + 1}</p>
+              <p className="mt-1 font-medium">{priority.title}</p>
+              {priority.description && (
+                <p className="mt-1 text-sm text-muted-foreground">{priority.description}</p>
+              )}
+              {priority.tracking && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Como vamos acompanhar: {priority.tracking}
+                </p>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+
+      {journeyPlan.modules.length > 0 && (
+        <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
+          <h2 className="font-display text-lg font-semibold">O que estamos acompanhando</h2>
+          <div className="mt-3 grid gap-2">
+            {journeyPlan.modules
+              .filter((module) => module.enabled)
+              .map((module) => (
+                <div key={module.id} className="rounded-lg bg-secondary/60 p-3">
+                  <p className="text-sm font-medium">{module.title}</p>
+                  {module.instructions && (
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      {module.instructions}
+                    </p>
+                  )}
+                </div>
+              ))}
+          </div>
+        </section>
+      )}
 
       {plan.motivation && (
         <section className="rounded-xl bg-accent p-5 text-accent-foreground">
