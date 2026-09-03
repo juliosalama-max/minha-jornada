@@ -1140,10 +1140,15 @@ export const updateJourneyActionProgress = createServerFn({ method: "POST" })
     if (data.actionType === "task" && data.status === "scheduled") {
       throw new Error("Tarefas só podem ser marcadas como pendentes ou concluídas.");
     }
+    if (task && task.responsible !== "patient") {
+      throw new Error("Esta tarefa não é de responsabilidade do paciente.");
+    }
 
     const scheduledDate = String(data.scheduledDate ?? "");
+    if (data.status === "scheduled" && !scheduledDate) {
+      throw new Error("Informe a data do agendamento.");
+    }
     if (
-      data.status === "scheduled" &&
       scheduledDate &&
       !/^\d{4}-\d{2}-\d{2}$/.test(scheduledDate)
     ) {
