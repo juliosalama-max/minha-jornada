@@ -1,5 +1,6 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { Plus, Send } from "lucide-react";
+import { JourneyCareActionsEditor } from "@/components/journey-care-actions-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -343,6 +344,8 @@ export function JourneyEngineEditor() {
           />
         ))}
       </section>
+
+      <JourneyCareActionsEditor />
     </div>
   );
 }
