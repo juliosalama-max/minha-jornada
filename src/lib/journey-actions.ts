@@ -26,15 +26,17 @@ export function actionIsCompleted(
 export function openCareActionCount(
   plan: JourneyPlanV2,
   progress: JourneyActionProgress[],
+  audience: "patient" | "doctor" = "patient",
 ): number {
   const tasks = plan.tasks.filter(
     (task) =>
-      task.visibleToPatient &&
+      (audience === "doctor" ||
+        (task.visibleToPatient && task.responsible === "patient")) &&
       !actionIsCompleted(progress, "task", task.id),
   ).length;
   const exams = plan.exams.filter(
     (exam) =>
-      exam.visibleToPatient &&
+      (audience === "doctor" || exam.visibleToPatient) &&
       !actionIsCompleted(progress, "exam", exam.id),
   ).length;
   return tasks + exams;
