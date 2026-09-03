@@ -32,7 +32,7 @@ import {
   normalizeJourneyPlan,
   withLegacyPlan,
 } from "@/lib/journey-plan";
-import { responseMatchesPeriod } from "@/lib/journey-schedule";
+import { moduleIsDue, responseMatchesPeriod } from "@/lib/journey-schedule";
 
 type JourneyRow = {
   id: string;
@@ -967,16 +967,21 @@ export const saveJourneyResponse = createServerFn({ method: "POST" })
 
     if (module.frequency.kind !== "event_based") {
       const date = new Date(`${data.occurredOn}T12:00:00`);
-      const duplicate = existingRows
-        .map((row) => ({
-          id: row.id,
-          moduleId: row.module_id,
-          occurredOn: row.occurred_on,
-          answers: parseJson<Record<string, JourneyAnswerValue>>(row.answers, {}),
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-        }))
-        .find((response) => responseMatchesPeriod(module, response, date));
+      const existingResponses = existingRows.map((row) => ({
+        id: row.id,
+        moduleId: row.module_id,
+        occurredOn: row.occurred_on,
+        answers: parseJson<Record<string, JourneyAnswerValue>>(row.answers, {}),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+      const duplicate = existingResponses.find((response) =>
+        responseMatchesPeriod(module, response, date),
+      );
+
+      if (!duplicate && !moduleIsDue(module, date, existingResponses)) {
+        throw new Error("Este registro não está previsto para esta data.");
+      }
 
       if (duplicate) {
         await sql`
