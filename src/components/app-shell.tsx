@@ -16,14 +16,14 @@ import { cn } from "@/lib/utils";
 const NAV_PATIENT = [
   { to: "/", label: "Início", icon: House },
   { to: "/hoje", label: "Hoje", icon: ClipboardCheck },
-  { to: "/mes", label: "Mês", icon: CalendarDays },
+  { to: "/mes", label: "Evolução", icon: CalendarDays },
   { to: "/jornada", label: "Jornada", icon: Route },
   { to: "/perfil", label: "Perfil", icon: UserRound },
 ] as const;
 
 const NAV_DOCTOR = [
   { to: "/", label: "Início", icon: House },
-  { to: "/mes", label: "Mês", icon: CalendarDays },
+  { to: "/mes", label: "Registros", icon: ClipboardCheck },
   { to: "/jornada", label: "Jornada", icon: Route },
   { to: "/perfil", label: "Perfil", icon: UserRound },
 ] as const;

@@ -4,6 +4,9 @@ import { ptBR } from "date-fns/locale";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { DayEditor } from "@/components/day-editor";
+import { DoctorJourneyRecords } from "@/components/doctor-journey-records";
+import { JourneyEvolution } from "@/components/journey-evolution";
+import { LegacyDoctorRecords } from "@/components/legacy-doctor-records";
 import { MonthGrid } from "@/components/month-grid";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +26,7 @@ import {
   monthStats,
   parseKey,
 } from "@/lib/calendar";
+import { isLegacyGeneratedJourney } from "@/lib/journey-schedule";
 import { useJournal } from "@/lib/journal-store";
 import type { DayLog, MonthNotes } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -34,6 +38,20 @@ type Tab = "med" | "walk" | "gym" | "cpap" | "meals";
 const EMPTY_NOTES: MonthNotes = {};
 
 function MesPage() {
+  const role = useJournal((s) => s.role);
+  const journeyPlan = useJournal((s) => s.journeyPlan);
+  const activeModules = journeyPlan.modules.filter((module) => module.enabled);
+  const legacyOnly = isLegacyGeneratedJourney(activeModules);
+
+  if (!legacyOnly) {
+    return role === "doctor" ? <DoctorJourneyRecords /> : <JourneyEvolution />;
+  }
+
+  if (role === "doctor") return <LegacyDoctorRecords />;
+  return <LegacyPatientMonthPage />;
+}
+
+function LegacyPatientMonthPage() {
   const [month, setMonth] = useState(() => new Date());
   const [tab, setTab] = useState<Tab>("med");
   const [openKey, setOpenKey] = useState<string | null>(null);
@@ -237,12 +255,13 @@ function MedCell({ log }: { log?: DayLog }) {
 }
 
 function WalkCell({ log }: { log?: DayLog }) {
-  if (!log?.walkMinutes) return null;
-  return <p className="truncate font-medium tabular-nums text-foreground">{log.walkMinutes}'</p>;
+  const minutes = log?.aerobic?.walk ?? log?.walkMinutes ?? 0;
+  if (!minutes) return null;
+  return <p className="truncate font-medium tabular-nums text-foreground">{minutes}'</p>;
 }
 
 function GymCell({ log }: { log?: DayLog }) {
-  if (!log?.gym) return null;
+  if (!Boolean(log?.strength?.gym ?? log?.gym)) return null;
   return <p className="font-semibold text-primary">X</p>;
 }
 
