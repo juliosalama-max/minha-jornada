@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { format, parseISO, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
@@ -349,7 +350,7 @@ function InfoCard({
   title: string;
   content: string;
   detail?: string;
-  action?: React.ReactNode;
+  action?: ReactNode;
 }) {
   return (
     <section className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
