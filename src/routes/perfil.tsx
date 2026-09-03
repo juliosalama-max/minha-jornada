@@ -26,7 +26,6 @@ export const Route = createFileRoute("/perfil")({ component: PerfilPage });
 function PerfilPage() {
   const profile = useJournal((s) => s.profile);
   const setProfile = useJournal((s) => s.setProfile);
-  const resetAll = useJournal((s) => s.resetAll);
   const role = useJournal((s) => s.role);
   const inviteCode = useJournal((s) => s.inviteCode);
   const doctorName = useJournal((s) => s.doctorName);
@@ -96,48 +95,52 @@ function PerfilPage() {
             onChange={(e) => setProfile({ name: e.target.value })}
           />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="first">Data da primeira consulta</Label>
-          <Input
-            id="first"
-            type="date"
-            value={profile.firstConsultDate}
-            onChange={(e) => setProfile({ firstConsultDate: e.target.value })}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Dia fixo da aplicação</Label>
-          <div className="grid grid-cols-7 gap-1">
-            {WEEKDAY_LABELS.map((label, i) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() =>
-                  setProfile({
-                    injectionWeekday: profile.injectionWeekday === i ? null : i,
-                  })
-                }
-                className={cn(
-                  "flex h-11 items-center justify-center rounded-md text-[11px] font-medium",
-                  profile.injectionWeekday === i
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-secondary text-secondary-foreground",
-                )}
-              >
-                {label.slice(0, 3)}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="dose">Dose utilizada</Label>
-          <Input
-            id="dose"
-            value={profile.dose}
-            onChange={(e) => setProfile({ dose: e.target.value })}
-            placeholder="Ex.: 2,5 mg"
-          />
-        </div>
+        {role === "doctor" && (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="first">Data da primeira consulta</Label>
+              <Input
+                id="first"
+                type="date"
+                value={profile.firstConsultDate}
+                onChange={(e) => setProfile({ firstConsultDate: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Dia fixo da aplicação</Label>
+              <div className="grid grid-cols-7 gap-1">
+                {WEEKDAY_LABELS.map((label, i) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() =>
+                      setProfile({
+                        injectionWeekday: profile.injectionWeekday === i ? null : i,
+                      })
+                    }
+                    className={cn(
+                      "flex h-11 items-center justify-center rounded-md text-[11px] font-medium",
+                      profile.injectionWeekday === i
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-secondary text-secondary-foreground",
+                    )}
+                  >
+                    {label.slice(0, 3)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dose">Dose utilizada</Label>
+              <Input
+                id="dose"
+                value={profile.dose}
+                onChange={(e) => setProfile({ dose: e.target.value })}
+                placeholder="Ex.: 2,5 mg"
+              />
+            </div>
+          </>
+        )}
       </section>
 
       <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
@@ -196,19 +199,6 @@ function PerfilPage() {
         <SignOutButton className="mt-4 w-full" />
       </section>
 
-      {role === "patient" && (
-        <Button
-          variant="outline"
-          className="mb-6 w-full text-destructive"
-          onClick={() => {
-            if (confirm("Zerar a jornada salva na conta? A médica também deixa de ver esses registros.")) {
-              resetAll();
-            }
-          }}
-        >
-          Zerar jornada
-        </Button>
-      )}
     </div>
   );
 }
