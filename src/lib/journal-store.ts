@@ -19,6 +19,7 @@ import {
   savePlan,
   saveJourneyDraft,
   publishJourney,
+  saveJourneyResponse,
   saveProfile,
   saveTasks,
   updatePatientTask,
@@ -30,6 +31,8 @@ import type {
   DayLog,
   JournalSnapshot,
   JourneyPlanV2,
+  JourneyAnswerValue,
+  JourneyModuleResponse,
   MonthNotes,
   PatientSummary,
   PlanConfig,
@@ -63,6 +66,7 @@ const seed = (): JournalSnapshot => ({
     publishedAt: null,
     draftUpdatedAt: null,
   },
+  journeyResponses: [],
 });
 
 type JournalState = JournalSnapshot & {
@@ -92,6 +96,11 @@ type JournalState = JournalSnapshot & {
   setJourneyPlan: (patch: Partial<JourneyPlanV2>) => void;
   saveJourneyDraft: () => Promise<void>;
   publishJourney: () => Promise<void>;
+  saveModuleResponse: (
+    moduleId: string,
+    occurredOn: string,
+    answers: Record<string, JourneyAnswerValue>,
+  ) => Promise<JourneyModuleResponse>;
   setTasksList: (tasks: Task[]) => void;
   toggleTask: (id: string) => void;
   updateTaskMeta: (id: string, meta: TaskMeta) => void;
@@ -119,6 +128,7 @@ function applySnapshot(s: JournalSnapshot) {
       publishedAt: null,
       draftUpdatedAt: null,
     },
+    journeyResponses: s.journeyResponses ?? [],
   };
 }
 
@@ -310,6 +320,18 @@ export const useJournal = create<JournalState>((set, get) => ({
     const s = get();
     const snapshot = await publishJourney({ data: { journeyId: s.journeyId } });
     set(applySnapshot(snapshot));
+  },
+  saveModuleResponse: async (moduleId, occurredOn, answers) => {
+    const response = await saveJourneyResponse({
+      data: { moduleId, occurredOn, answers },
+    });
+    set((s) => ({
+      journeyResponses: [
+        response,
+        ...s.journeyResponses.filter((item) => item.id !== response.id),
+      ],
+    }));
+    return response;
   },
   setTasksList: (tasks) => {
     set({ tasks });
