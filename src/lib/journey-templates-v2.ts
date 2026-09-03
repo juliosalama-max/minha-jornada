@@ -7,6 +7,7 @@ function id(prefix: string) {
 
 export function sweetsThirtyDayTemplate(): JourneyPlanV2 {
   const plan = emptyJourneyPlan();
+  const frequencyQuestionId = id("question");
   return {
     ...plan,
     title: "Registro de doces e contexto alimentar — 30 dias",
@@ -38,7 +39,7 @@ export function sweetsThirtyDayTemplate(): JourneyPlanV2 {
         required: false,
         questions: [
           {
-            id: id("question"),
+            id: frequencyQuestionId,
             label: "Quantas vezes você consumiu doce hoje?",
             type: "single_choice",
             required: true,
@@ -64,7 +65,7 @@ export function sweetsThirtyDayTemplate(): JourneyPlanV2 {
               { id: "other", label: "Outro" },
             ],
             condition: {
-              questionId: "sweets-frequency",
+              questionId: frequencyQuestionId,
               operator: "not_equals",
               value: "none",
             },
