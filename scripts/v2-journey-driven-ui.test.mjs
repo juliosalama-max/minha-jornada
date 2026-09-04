@@ -16,7 +16,10 @@ test("patient onboarding does not hardcode universal clinical modules", () => {
     onboarding,
     /Acompanhe medicação, movimento, sono e refeições/,
   );
-  assert.match(onboarding, /somente os registros e ações que fazem parte da Jornada/);
+  assert.match(
+    onboarding,
+    /somente os registros e ações que fazem\s+parte da Jornada/,
+  );
 });
 
 test("Profile does not expose legacy medication controls outside the Journey", () => {
