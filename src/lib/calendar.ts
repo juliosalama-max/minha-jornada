@@ -75,14 +75,25 @@ export function emptyDay(): DayLog {
 
 export function hasAnyLog(log: DayLog | undefined): boolean {
   if (!log) return false;
+  const aerobicMinutes = Object.values(log.aerobic ?? {}).some((value) => (value ?? 0) > 0);
+  const strengthDone = Object.values(log.strength ?? {}).some(Boolean);
   return Boolean(
     log.applied ||
       (log.symptoms && log.symptoms.length > 0) ||
-      (log.walkMinutes && log.walkMinutes > 0) ||
+      aerobicMinutes ||
+      (log.walkMinutes ?? 0) > 0 ||
+      strengthDone ||
       log.gym ||
-      (log.cpapHours && log.cpapHours > 0) ||
+      (log.cpapHours ?? 0) > 0 ||
       log.cpapFullNight ||
-      log.meals,
+      (log.sleepHours ?? 0) > 0 ||
+      log.sleepSatisfied !== undefined ||
+      log.prayer ||
+      log.nature ||
+      log.contemplation ||
+      log.meditation ||
+      log.meals ||
+      log.social,
   );
 }
 
@@ -112,9 +123,16 @@ export function monthStats(month: Date, days: Record<string, DayLog>): MonthStat
   const list = daysInMonth(month);
   const logs = list.map((d) => days[toKey(d)]);
   const weeks = Math.max(1, Math.ceil(list.length / 7));
-  const walkMinutes = logs.reduce((n, l) => n + (l?.walkMinutes ?? 0), 0);
-  const walks = logs.filter((l) => (l?.walkMinutes ?? 0) > 0).length;
-  const gymSessions = logs.filter((l) => l?.gym).length;
+  const walkMinutes = logs.reduce(
+    (n, l) => n + (l?.aerobic?.walk ?? l?.walkMinutes ?? 0),
+    0,
+  );
+  const walks = logs.filter(
+    (l) => (l?.aerobic?.walk ?? l?.walkMinutes ?? 0) > 0,
+  ).length;
+  const gymSessions = logs.filter(
+    (l) => Boolean(l?.strength?.gym ?? l?.gym),
+  ).length;
   const cpapNights = logs.filter((l) => (l?.cpapHours ?? 0) > 0 || l?.cpapFullNight).length;
   const cpapHours = logs.reduce((n, l) => n + (l?.cpapHours ?? 0), 0);
   const cpapFullNights = logs.filter((l) => l?.cpapFullNight).length;

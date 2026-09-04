@@ -1,31 +1,41 @@
 import { create } from "zustand";
 import {
-  DEFAULT_CONSULTS,
-  DEFAULT_NUTRITION,
-  DEFAULT_TASKS,
-} from "./constants";
-import {
   chooseRole as chooseRoleFn,
   claimPlanByCode,
+  closeJourneyCycle,
   createDoctorPlan,
+  createNextJourneyCycle,
   getBootstrap,
   linkPatientByCode,
+  listDoctorAlerts,
   listDoctorNotices,
+  markDoctorAlertsRead as markDoctorAlertsReadFn,
   markNoticesRead as markNoticesReadFn,
-  resetJourney,
   saveConsults,
   saveDayLog,
   saveMonthNotes,
   saveOnboarding,
   savePlan,
+  saveJourneyDraft,
+  publishJourney,
+  saveJourneyResponse,
   saveProfile,
   saveTasks,
+  updatePatientTask,
+  updateJourneyActionProgress,
   type Bootstrap,
 } from "./journal-api";
 import { emptyPlan } from "./plan-templates";
+import { emptyJourneyPlan } from "./journey-plan";
 import type {
   DayLog,
+  DoctorAlert,
   JournalSnapshot,
+  JourneyActionProgress,
+  JourneyPlanV2,
+  JourneyAnswerValue,
+  JourneyCycleSummary,
+  JourneyModuleResponse,
   MonthNotes,
   PatientSummary,
   PlanConfig,
@@ -46,12 +56,22 @@ const emptyProfile = (): Profile => ({
 const seed = (): JournalSnapshot => ({
   onboarded: false,
   profile: emptyProfile(),
-  consults: DEFAULT_CONSULTS.map((c) => ({ ...c })),
-  nutrition: DEFAULT_NUTRITION.map((c) => ({ ...c })),
-  tasks: DEFAULT_TASKS.map((t) => ({ ...t, meta: t.meta ? { ...t.meta } : undefined })),
+  consults: [],
+  nutrition: [],
+  tasks: [],
   days: {},
   monthNotes: {},
   plan: emptyPlan(),
+  journeyPlan: emptyJourneyPlan(),
+  publishedJourneyPlan: emptyJourneyPlan(),
+  journeyMeta: {
+    status: "draft",
+    currentVersion: 0,
+    publishedAt: null,
+    draftUpdatedAt: null,
+  },
+  journeyResponses: [],
+  journeyActionProgress: [],
 });
 
 type JournalState = JournalSnapshot & {
@@ -62,14 +82,18 @@ type JournalState = JournalSnapshot & {
   doctorName: string | null;
   patientName: string | null;
   patients: PatientSummary[];
+  journeyHistory: JourneyCycleSummary[];
   notices: DoctorNotice[];
+  alerts: DoctorAlert[];
   applyBootstrap: (b: Bootstrap) => void;
   hydrate: (journeyId?: string | null) => Promise<void>;
-  chooseRole: (role: Role, name: string, inviteCode?: string) => Promise<void>;
+  chooseRole: (role: "patient", name: string, inviteCode?: string) => Promise<void>;
   linkCode: (code: string) => Promise<void>;
   claimCode: (code: string) => Promise<void>;
   createPlan: (data: { patientName: string; firstConsultDate?: string }) => Promise<void>;
   openPatient: (journeyId: string) => Promise<void>;
+  closeCurrentJourney: (status: "completed" | "archived") => Promise<void>;
+  startNextJourney: (firstConsultDate?: string) => Promise<void>;
   leavePatient: () => void;
   completeOnboarding: (profile: Partial<Profile>) => void;
   setProfile: (patch: Partial<Profile>) => void;
@@ -78,15 +102,30 @@ type JournalState = JournalSnapshot & {
   setNutritionDate: (index: number, date: string) => void;
   setNutritionList: (nutrition: JournalSnapshot["nutrition"]) => void;
   setPlan: (patch: Partial<PlanConfig>) => void;
+  setJourneyPlan: (patch: Partial<JourneyPlanV2>) => void;
+  saveJourneyDraft: () => Promise<void>;
+  publishJourney: () => Promise<void>;
+  saveModuleResponse: (
+    moduleId: string,
+    occurredOn: string,
+    answers: Record<string, JourneyAnswerValue>,
+  ) => Promise<JourneyModuleResponse>;
+  updateActionProgress: (
+    actionType: "task" | "exam",
+    actionId: string,
+    status: "pending" | "scheduled" | "completed",
+    patch?: { scheduledDate?: string; note?: string },
+  ) => Promise<JourneyActionProgress>;
   setTasksList: (tasks: Task[]) => void;
   toggleTask: (id: string) => void;
   updateTaskMeta: (id: string, meta: TaskMeta) => void;
   patchDay: (date: string, patch: Partial<DayLog>) => void;
   setMonthNotes: (month: string, patch: Partial<MonthNotes>) => void;
-  resetAll: () => void;
   clear: () => void;
   refreshNotices: () => Promise<void>;
   markNoticesRead: (ids?: string[]) => Promise<void>;
+  refreshAlerts: () => Promise<void>;
+  markAlertsRead: (ids?: string[]) => Promise<void>;
 };
 
 function applySnapshot(s: JournalSnapshot) {
@@ -99,6 +138,16 @@ function applySnapshot(s: JournalSnapshot) {
     days: s.days,
     monthNotes: s.monthNotes,
     plan: s.plan ?? emptyPlan(),
+    journeyPlan: s.journeyPlan ?? emptyJourneyPlan(),
+    publishedJourneyPlan: s.publishedJourneyPlan ?? s.journeyPlan ?? emptyJourneyPlan(),
+    journeyMeta: s.journeyMeta ?? {
+      status: "draft",
+      currentVersion: 0,
+      publishedAt: null,
+      draftUpdatedAt: null,
+    },
+    journeyResponses: s.journeyResponses ?? [],
+    journeyActionProgress: s.journeyActionProgress ?? [],
   };
 }
 
@@ -113,7 +162,9 @@ export const useJournal = create<JournalState>((set, get) => ({
   doctorName: null,
   patientName: null,
   patients: [],
+  journeyHistory: [],
   notices: [],
+  alerts: [],
   applyBootstrap: (b) => {
     if (b.kind === "needs-role") {
       set({
@@ -125,7 +176,9 @@ export const useJournal = create<JournalState>((set, get) => ({
         doctorName: null,
         patientName: null,
         patients: [],
+        journeyHistory: [],
         notices: [],
+        alerts: [],
       });
       return;
     }
@@ -139,7 +192,9 @@ export const useJournal = create<JournalState>((set, get) => ({
         doctorName: null,
         patientName: b.name,
         patients: [],
+        journeyHistory: [],
         notices: [],
+        alerts: [],
       });
       return;
     }
@@ -152,7 +207,9 @@ export const useJournal = create<JournalState>((set, get) => ({
         doctorName: b.doctorName,
         patientName: b.snapshot.profile.name,
         patients: [],
+        journeyHistory: [],
         notices: [],
+        alerts: [],
         ...applySnapshot(b.snapshot),
       });
       return;
@@ -165,7 +222,9 @@ export const useJournal = create<JournalState>((set, get) => ({
       doctorName: b.doctorName,
       patientName: b.patientName,
       patients: b.patients,
+      journeyHistory: b.journeyHistory ?? [],
       notices: b.notices ?? [],
+      alerts: b.alerts ?? [],
       ...(b.snapshot ? applySnapshot(b.snapshot) : seed()),
     });
   },
@@ -199,8 +258,22 @@ export const useJournal = create<JournalState>((set, get) => ({
     const b = await getBootstrap({ data: { journeyId } });
     get().applyBootstrap(b);
   },
+  closeCurrentJourney: async (status) => {
+    const journeyId = get().journeyId;
+    if (!journeyId) throw new Error("Selecione uma Jornada.");
+    const b = await closeJourneyCycle({ data: { journeyId, status } });
+    get().applyBootstrap(b);
+  },
+  startNextJourney: async (firstConsultDate) => {
+    const journeyId = get().journeyId;
+    if (!journeyId) throw new Error("Selecione uma Jornada.");
+    const b = await createNextJourneyCycle({
+      data: { journeyId, firstConsultDate },
+    });
+    get().applyBootstrap(b);
+  },
   leavePatient: () => {
-    const { patients, doctorName } = get();
+    const { patients, doctorName, notices, alerts } = get();
     set({
       ...seed(),
       ready: true,
@@ -210,7 +283,9 @@ export const useJournal = create<JournalState>((set, get) => ({
       doctorName,
       patientName: null,
       patients,
-      notices: get().notices,
+      journeyHistory: [],
+      notices,
+      alerts,
     });
   },
   completeOnboarding: (profile) => {
@@ -258,9 +333,71 @@ export const useJournal = create<JournalState>((set, get) => ({
     void saveConsults({ data: { journeyId: s.journeyId, nutrition } });
   },
   setPlan: (patch) => {
-    set((s) => ({ plan: { ...s.plan, ...patch } }));
+    set((s) => ({
+      plan: { ...s.plan, ...patch },
+      journeyPlan: {
+        ...s.journeyPlan,
+        legacy: { ...s.plan, ...patch },
+        motivation: patch.motivation ?? s.journeyPlan.motivation,
+        objective: patch.workOn ?? s.journeyPlan.objective,
+      },
+    }));
     const s = get();
     void savePlan({ data: { journeyId: s.journeyId, plan: s.plan } });
+  },
+  setJourneyPlan: (patch) => {
+    set((s) => ({
+      journeyPlan: {
+        ...s.journeyPlan,
+        ...patch,
+        legacy: patch.legacy ?? s.journeyPlan.legacy,
+      },
+    }));
+  },
+  saveJourneyDraft: async () => {
+    const s = get();
+    const snapshot = await saveJourneyDraft({
+      data: { journeyId: s.journeyId, plan: s.journeyPlan },
+    });
+    set(applySnapshot(snapshot));
+  },
+  publishJourney: async () => {
+    const s = get();
+    const snapshot = await publishJourney({ data: { journeyId: s.journeyId } });
+    set(applySnapshot(snapshot));
+  },
+  saveModuleResponse: async (moduleId, occurredOn, answers) => {
+    const response = await saveJourneyResponse({
+      data: { moduleId, occurredOn, answers },
+    });
+    set((s) => ({
+      journeyResponses: [
+        response,
+        ...s.journeyResponses.filter((item) => item.id !== response.id),
+      ],
+    }));
+    return response;
+  },
+  updateActionProgress: async (actionType, actionId, status, patch = {}) => {
+    const progress = await updateJourneyActionProgress({
+      data: {
+        actionType,
+        actionId,
+        status,
+        scheduledDate: patch.scheduledDate,
+        note: patch.note,
+      },
+    });
+    set((s) => ({
+      journeyActionProgress: [
+        progress,
+        ...s.journeyActionProgress.filter(
+          (item) =>
+            !(item.actionType === actionType && item.actionId === actionId),
+        ),
+      ],
+    }));
+    return progress;
   },
   setTasksList: (tasks) => {
     set({ tasks });
@@ -268,11 +405,18 @@ export const useJournal = create<JournalState>((set, get) => ({
     void saveTasks({ data: { journeyId: s.journeyId, tasks } });
   },
   toggleTask: (id) => {
+    const current = get().tasks.find((task) => task.id === id);
+    if (!current) return;
+    const done = !current.done;
     set((s) => ({
-      tasks: s.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),
+      tasks: s.tasks.map((t) => (t.id === id ? { ...t, done } : t)),
     }));
     const s = get();
-    void saveTasks({ data: { journeyId: s.journeyId, tasks: s.tasks } });
+    if (s.role === "patient") {
+      void updatePatientTask({ data: { taskId: id, done } });
+    } else {
+      void saveTasks({ data: { journeyId: s.journeyId, tasks: s.tasks } });
+    }
   },
   updateTaskMeta: (id, meta) => {
     set((s) => ({
@@ -281,7 +425,11 @@ export const useJournal = create<JournalState>((set, get) => ({
       ),
     }));
     const s = get();
-    void saveTasks({ data: { journeyId: s.journeyId, tasks: s.tasks } });
+    if (s.role === "patient") {
+      void updatePatientTask({ data: { taskId: id, meta } });
+    } else {
+      void saveTasks({ data: { journeyId: s.journeyId, tasks: s.tasks } });
+    }
   },
   patchDay: (date, patch) => {
     set((s) => {
@@ -302,11 +450,6 @@ export const useJournal = create<JournalState>((set, get) => ({
     const s = get();
     void saveMonthNotes({ data: { journeyId: s.journeyId, month, patch } });
   },
-  resetAll: () => {
-    void resetJourney({ data: { journeyId: get().journeyId } }).then((b) => {
-      get().applyBootstrap(b);
-    });
-  },
   clear: () =>
     set({
       ...seed(),
@@ -317,7 +460,9 @@ export const useJournal = create<JournalState>((set, get) => ({
       doctorName: null,
       patientName: null,
       patients: [],
+      journeyHistory: [],
       notices: [],
+      alerts: [],
     }),
   refreshNotices: async () => {
     if (get().role !== "doctor") return;
@@ -328,5 +473,15 @@ export const useJournal = create<JournalState>((set, get) => ({
     if (get().role !== "doctor") return;
     const notices = await markNoticesReadFn({ data: { ids } });
     set({ notices });
+  },
+  refreshAlerts: async () => {
+    if (get().role !== "doctor") return;
+    const alerts = await listDoctorAlerts();
+    set({ alerts });
+  },
+  markAlertsRead: async (ids) => {
+    if (get().role !== "doctor") return;
+    const alerts = await markDoctorAlertsReadFn({ data: { ids } });
+    set({ alerts });
   },
 }));

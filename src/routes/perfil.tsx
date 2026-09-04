@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import { SignOutButton } from "@/components/sign-out-button";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import {
-  BIOIMPEDANCE_PREP,
   CLINIC_EMAIL,
   CLINIC_INSTAGRAM,
   CLINIC_NAME,
@@ -16,7 +15,6 @@ import {
   CLINIC_WHATSAPP,
   CLINIC_WHATSAPP_LABEL,
   EMERGENCY_COPY,
-  WEEKDAY_LABELS,
 } from "@/lib/constants";
 import { useJournal } from "@/lib/journal-store";
 import { cn } from "@/lib/utils";
@@ -26,7 +24,6 @@ export const Route = createFileRoute("/perfil")({ component: PerfilPage });
 function PerfilPage() {
   const profile = useJournal((s) => s.profile);
   const setProfile = useJournal((s) => s.setProfile);
-  const resetAll = useJournal((s) => s.resetAll);
   const role = useJournal((s) => s.role);
   const inviteCode = useJournal((s) => s.inviteCode);
   const doctorName = useJournal((s) => s.doctorName);
@@ -56,88 +53,66 @@ function PerfilPage() {
         <section className="space-y-3 rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
           <h2 className="font-display text-lg font-semibold">Pacientes</h2>
           <p className="text-sm text-muted-foreground">
-            Tudo o que o paciente registra aparece aqui. Use o código do perfil
-            para vincular uma nova jornada.
+            Selecione a Jornada atual de um paciente ou volte à lista principal.
           </p>
           <ul className="space-y-2">
             {patients.map((p) => (
               <li key={p.id}>
                 <button
                   type="button"
-                  onClick={() => void openPatient(p.id)}
+                  disabled={!p.journeyId}
+                  onClick={() => {
+                    if (p.journeyId) void openPatient(p.journeyId);
+                  }}
                   className={cn(
-                    "flex w-full items-center justify-between rounded-lg px-3 py-3 text-left",
-                    p.id === journeyId ? "bg-accent text-accent-foreground" : "bg-secondary",
+                    "flex w-full items-center justify-between rounded-lg px-3 py-3 text-left disabled:opacity-60",
+                    p.journeyId === journeyId
+                      ? "bg-accent text-accent-foreground"
+                      : "bg-secondary",
                   )}
                 >
                   <span>
                     <span className="block text-sm font-medium">{p.name}</span>
-                    <span className="font-mono text-xs tracking-widest opacity-70">
-                      {p.inviteCode}
+                    <span className="text-xs text-muted-foreground">
+                      {p.journeyCount} {p.journeyCount === 1 ? "Jornada" : "Jornadas"}
+                      {p.pending ? " · aguardando entrada" : ""}
                     </span>
                   </span>
-                  <span className="text-xs">{p.id === journeyId ? "Atual" : "Abrir"}</span>
+                  <span className="text-xs">
+                    {p.journeyId === journeyId ? "Atual" : "Abrir"}
+                  </span>
                 </button>
               </li>
             ))}
           </ul>
-          <Button type="button" variant="outline" className="w-full" onClick={() => leavePatient()}>
-            Vincular outro paciente
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={() => leavePatient()}
+          >
+            Voltar à lista de pacientes
           </Button>
         </section>
       )}
 
       <section className="space-y-4 rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
         <div className="space-y-2">
-          <Label htmlFor="nome">{role === "doctor" ? "Nome do paciente" : "Nome"}</Label>
+          <Label htmlFor="nome">
+            {role === "doctor" ? "Nome do paciente selecionado" : "Nome"}
+          </Label>
           <Input
             id="nome"
             value={profile.name}
             onChange={(e) => setProfile({ name: e.target.value })}
           />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="first">Data da primeira consulta</Label>
-          <Input
-            id="first"
-            type="date"
-            value={profile.firstConsultDate}
-            onChange={(e) => setProfile({ firstConsultDate: e.target.value })}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Dia fixo da aplicação</Label>
-          <div className="grid grid-cols-7 gap-1">
-            {WEEKDAY_LABELS.map((label, i) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() =>
-                  setProfile({
-                    injectionWeekday: profile.injectionWeekday === i ? null : i,
-                  })
-                }
-                className={cn(
-                  "flex h-11 items-center justify-center rounded-md text-[11px] font-medium",
-                  profile.injectionWeekday === i
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-secondary text-secondary-foreground",
-                )}
-              >
-                {label.slice(0, 3)}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="dose">Dose utilizada</Label>
-          <Input
-            id="dose"
-            value={profile.dose}
-            onChange={(e) => setProfile({ dose: e.target.value })}
-            placeholder="Ex.: 2,5 mg"
-          />
-        </div>
+        {role === "doctor" && (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Medicações, datas de acompanhamento e demais definições clínicas são
+            editadas na Jornada, com histórico de versões.
+          </p>
+        )}
       </section>
 
       <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
@@ -170,11 +145,6 @@ function PerfilPage() {
         </ul>
       </section>
 
-      <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
-        <h2 className="font-display text-lg font-semibold">Preparo da bioimpedância</h2>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{BIOIMPEDANCE_PREP}</p>
-      </section>
-
       <aside className="rounded-xl bg-warn p-4 text-warn-foreground">
         <p className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em]">
           <TriangleAlert className="size-3.5" />
@@ -196,19 +166,6 @@ function PerfilPage() {
         <SignOutButton className="mt-4 w-full" />
       </section>
 
-      {role === "patient" && (
-        <Button
-          variant="outline"
-          className="mb-6 w-full text-destructive"
-          onClick={() => {
-            if (confirm("Zerar a jornada salva na conta? A médica também deixa de ver esses registros.")) {
-              resetAll();
-            }
-          }}
-        >
-          Zerar jornada
-        </Button>
-      )}
     </div>
   );
 }

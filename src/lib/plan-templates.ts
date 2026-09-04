@@ -1,65 +1,67 @@
-import { CARE_FOCUS, SYMPTOMS } from "./constants";
-import type { PlanConfig, SymptomCode } from "./types";
-
-const ALL_SYMPTOMS = SYMPTOMS.map((s) => s.code) as SymptomCode[];
+import type { PlanConfig } from "./types";
 
 export function emptyPlan(): PlanConfig {
   return {
     motivation: "",
     workOn: "",
-    focus: CARE_FOCUS,
+    focus: "",
     medication: {
-      enabled: true,
-      hasInjection: true,
-      symptoms: ALL_SYMPTOMS,
+      enabled: false,
+      hasInjection: false,
+      symptoms: [],
     },
     movement: {
-      enabled: true,
-      aerobic: ["walk"],
-      strength: ["gym"],
+      enabled: false,
+      aerobic: [],
+      strength: [],
     },
     sleep: {
-      enabled: true,
+      enabled: false,
       mode: "general",
     },
-    spirituality: { enabled: true },
-    food: { enabled: true },
-    social: { enabled: true },
+    spirituality: { enabled: false },
+    food: { enabled: false },
+    social: { enabled: false },
   };
 }
 
 export function normalizePlan(raw: Partial<PlanConfig> | null | undefined): PlanConfig {
   const base = emptyPlan();
   if (!raw) return base;
+
   const legacy = raw as Partial<PlanConfig> & {
     checkin?: string;
     modules?: string[];
     included?: string[];
   };
   const modules = legacy.modules ?? [];
-  const hasLegacy = !raw.medication && modules.length > 0;
+  const hasLegacyModules = modules.length > 0;
+
   return {
     motivation: String(raw.motivation ?? ""),
     workOn: String(raw.workOn ?? ""),
-    focus: raw.focus?.trim() ? raw.focus : base.focus,
+    focus: String(raw.focus ?? ""),
     medication: raw.medication ?? {
-      enabled: !hasLegacy || modules.includes("meds"),
-      hasInjection: true,
-      symptoms: ALL_SYMPTOMS,
+      enabled: hasLegacyModules && modules.includes("meds"),
+      hasInjection: hasLegacyModules && modules.includes("meds"),
+      symptoms: [],
     },
     movement: raw.movement ?? {
-      enabled: !hasLegacy || modules.some((m) => ["walk", "gym", "run"].includes(m)),
-      aerobic: modules.includes("run") ? ["walk", "run"] : ["walk"],
-      strength: ["gym"],
+      enabled: hasLegacyModules && modules.some((m) => ["walk", "gym", "run"].includes(m)),
+      aerobic: [
+        ...(modules.includes("walk") ? (["walk"] as const) : []),
+        ...(modules.includes("run") ? (["run"] as const) : []),
+      ],
+      strength: modules.includes("gym") ? ["gym"] : [],
     },
     sleep: raw.sleep ?? {
-      enabled: !hasLegacy || modules.includes("sleep"),
+      enabled: hasLegacyModules && modules.includes("sleep"),
       mode: "general",
     },
-    spirituality: raw.spirituality ?? { enabled: true },
+    spirituality: raw.spirituality ?? { enabled: false },
     food: raw.food ?? {
-      enabled: !hasLegacy || modules.includes("meals"),
+      enabled: hasLegacyModules && modules.includes("meals"),
     },
-    social: raw.social ?? { enabled: true },
+    social: raw.social ?? { enabled: false },
   };
 }

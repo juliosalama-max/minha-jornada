@@ -96,6 +96,207 @@ export type PlanConfig = {
   social: { enabled: boolean };
 };
 
+export type JourneyStatus =
+  | "draft"
+  | "published"
+  | "in_review"
+  | "completed"
+  | "archived";
+
+export type JourneyFrequencyKind =
+  | "daily"
+  | "weekly"
+  | "selected_days"
+  | "monthly"
+  | "event_based"
+  | "one_time";
+
+export type JourneyFrequency = {
+  kind: JourneyFrequencyKind;
+  daysOfWeek?: number[];
+  timesPerWeek?: number;
+};
+
+export type JourneyQuestionType =
+  | "boolean"
+  | "single_choice"
+  | "multiple_choice"
+  | "scale"
+  | "number"
+  | "duration"
+  | "short_text"
+  | "long_text"
+  | "emotion"
+  | "event";
+
+export type JourneyQuestionOption = {
+  id: string;
+  label: string;
+};
+
+export type JourneyQuestionCondition = {
+  questionId: string;
+  operator: "equals" | "not_equals" | "includes";
+  value: string | number | boolean;
+};
+
+export type JourneyQuestion = {
+  id: string;
+  label: string;
+  type: JourneyQuestionType;
+  required: boolean;
+  options?: JourneyQuestionOption[];
+  min?: number;
+  max?: number;
+  step?: number;
+  condition?: JourneyQuestionCondition;
+};
+
+export type JourneyModuleType =
+  | "medication"
+  | "food"
+  | "movement"
+  | "sleep"
+  | "cpap"
+  | "symptoms"
+  | "eating_behavior"
+  | "stress"
+  | "social"
+  | "spirituality"
+  | "questionnaire"
+  | "custom";
+
+export type JourneyAlertRule = {
+  id: string;
+  questionId: string;
+  operator: "equals" | "not_equals" | "includes" | "gte" | "lte";
+  value: string | number | boolean;
+  title: string;
+  severity: "attention" | "important";
+};
+
+export type JourneyModule = {
+  id: string;
+  type: JourneyModuleType;
+  title: string;
+  enabled: boolean;
+  instructions: string;
+  frequency: JourneyFrequency;
+  startDate: string;
+  endDate: string;
+  reviewDate: string;
+  required: boolean;
+  questions: JourneyQuestion[];
+  alerts?: JourneyAlertRule[];
+};
+
+export type JourneyPriority = {
+  id: string;
+  title: string;
+  description: string;
+  tracking: string;
+  reviewDate: string;
+};
+
+export type JourneyTaskCategory =
+  | "exam"
+  | "appointment"
+  | "medication"
+  | "food"
+  | "movement"
+  | "sleep"
+  | "document"
+  | "other";
+
+export type JourneyTaskResponsible =
+  | "patient"
+  | "doctor"
+  | "team"
+  | "nutritionist"
+  | "other";
+
+export type JourneyTask = {
+  id: string;
+  title: string;
+  description: string;
+  category: JourneyTaskCategory;
+  responsible: JourneyTaskResponsible;
+  dueDate: string;
+  priority: "normal" | "important";
+  visibleToPatient: boolean;
+};
+
+export type JourneyExam = {
+  id: string;
+  title: string;
+  instructions: string;
+  requestedDate: string;
+  dueDate: string;
+  visibleToPatient: boolean;
+};
+
+export type JourneyAppointment = {
+  id: string;
+  type: "doctor" | "nutrition" | "psychology" | "nursing" | "other";
+  professional: string;
+  date: string;
+  offsetDays: number | null;
+  mode: "in_person" | "online" | "unspecified";
+  notes: string;
+  status: "planned" | "scheduled" | "completed" | "cancelled";
+  visibleToPatient: boolean;
+};
+
+export type JourneyActionProgress = {
+  actionType: "task" | "exam";
+  actionId: string;
+  status: "pending" | "scheduled" | "completed" | "cancelled";
+  scheduledDate: string;
+  note: string;
+  completedAt: string | null;
+  updatedAt: string;
+};
+
+export type JourneyPlanV2 = {
+  schemaVersion: 2;
+  title: string;
+  startDate: string;
+  durationDays: number | null;
+  reviewDate: string;
+  motivation: string;
+  patientValues: string;
+  objective: string;
+  priorities: JourneyPriority[];
+  modules: JourneyModule[];
+  tasks: JourneyTask[];
+  exams: JourneyExam[];
+  appointments: JourneyAppointment[];
+  legacy: PlanConfig;
+};
+
+export type JourneyMeta = {
+  status: JourneyStatus;
+  currentVersion: number;
+  publishedAt: string | null;
+  draftUpdatedAt: string | null;
+};
+
+export type JourneyVersionSummary = {
+  version: number;
+  publishedAt: string;
+};
+
+export type JourneyAnswerValue = string | number | boolean | string[] | null;
+
+export type JourneyModuleResponse = {
+  id: string;
+  moduleId: string;
+  occurredOn: string;
+  answers: Record<string, JourneyAnswerValue>;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type MonthNotes = {
   worstSymptom?: string;
   walkFeeling?: string;
@@ -114,16 +315,50 @@ export type JournalSnapshot = {
   days: Record<string, DayLog>;
   monthNotes: Record<string, MonthNotes>;
   plan: PlanConfig;
+  journeyPlan: JourneyPlanV2;
+  publishedJourneyPlan: JourneyPlanV2;
+  journeyMeta: JourneyMeta;
+  journeyResponses: JourneyModuleResponse[];
+  journeyActionProgress: JourneyActionProgress[];
 };
 
 export type Role = "patient" | "doctor";
 
+export type JourneyCycleSummary = {
+  id: string;
+  title: string;
+  status: JourneyStatus;
+  currentVersion: number;
+  startDate: string;
+  publishedAt: string | null;
+  updatedAt: string;
+};
+
 export type PatientSummary = {
   id: string;
+  journeyId: string | null;
   name: string;
   inviteCode: string;
   onboarded: boolean;
   pending: boolean;
+  journeyStatus?: JourneyStatus;
+  currentVersion?: number;
+  journeyCount: number;
+  lastRecordAt: string | null;
+  unreadAlerts: number;
+  openActions: number;
+};
+
+export type DoctorAlert = {
+  id: string;
+  journeyId: string;
+  patientName: string;
+  moduleTitle: string;
+  title: string;
+  severity: "attention" | "important";
+  occurredOn: string;
+  createdAt: string;
+  read: boolean;
 };
 
 export type DoctorNotice = {

@@ -1,259 +1,218 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { addMonths, format, parseISO } from "date-fns";
+import type { ReactNode } from "react";
+import { format, parseISO, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ArrowRight, Stethoscope, TriangleAlert } from "lucide-react";
-import { HabitRing } from "@/components/habit-ring";
+import {
+  ArrowRight,
+  CalendarDays,
+  CheckCircle2,
+  ClipboardCheck,
+  Route as RouteIcon,
+  TriangleAlert,
+} from "lucide-react";
+import { AlertFeed } from "@/components/alert-feed";
+import { DoctorPreConsultSummary } from "@/components/doctor-pre-consult-summary";
+import { JourneyHistoryPanel } from "@/components/journey-history-panel";
 import { NoticeFeed } from "@/components/notice-feed";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { formatLong, hasAnyLog, monthStats, toKey } from "@/lib/calendar";
-import { CARE_FOCUS, EMERGENCY_COPY } from "@/lib/constants";
+import { openCareActionCount, resolvedAppointmentDate } from "@/lib/journey-actions";
+import {
+  completedModulesForDate,
+  dueModulesForDate,
+  isLegacyGeneratedJourney,
+} from "@/lib/journey-schedule";
+import { formatLong } from "@/lib/calendar";
+import { EMERGENCY_COPY } from "@/lib/constants";
 import { useJournal } from "@/lib/journal-store";
+import type { JourneyPlanV2 } from "@/lib/types";
 
 export const Route = createFileRoute("/")({ component: Home });
 
 function Home() {
-  const name = useJournal((s) => s.profile.name);
-  const days = useJournal((s) => s.days);
-  const consults = useJournal((s) => s.consults);
-  const tasks = useJournal((s) => s.tasks);
   const role = useJournal((s) => s.role);
-  const inviteCode = useJournal((s) => s.inviteCode);
-  const doctorName = useJournal((s) => s.doctorName);
-  const plan = useJournal((s) => s.plan);
-  const patients = useJournal((s) => s.patients);
-  const journeyId = useJournal((s) => s.journeyId);
+  return role === "doctor" ? <DoctorHome /> : <PatientHome />;
+}
+
+function PatientHome() {
+  const name = useJournal((s) => s.profile.name);
+  const journeyPlan = useJournal((s) => s.journeyPlan);
+  const journeyMeta = useJournal((s) => s.journeyMeta);
+  const responses = useJournal((s) => s.journeyResponses);
+  const days = useJournal((s) => s.days);
+  const tasks = useJournal((s) => s.tasks);
+  const consults = useJournal((s) => s.consults);
+  const actionProgress = useJournal((s) => s.journeyActionProgress);
   const today = new Date();
-  const stats = monthStats(today, days);
-  const todayLog = days[toKey(today)];
-  const doneToday = hasAnyLog(todayLog);
-  const nextConsult = consults.find((c) => !c.date) ?? consults.find((c) => {
-    if (!c.date) return false;
-    return parseISO(c.date) >= new Date(toKey(today));
-  });
-  const upcomingDated = consults
-    .filter((c) => c.date && parseISO(c.date) >= new Date(toKey(today)))
-    .sort((a, b) => a.date.localeCompare(b.date))[0];
-  const shown = upcomingDated ?? nextConsult;
-  const tasksDone = tasks.filter((t) => t.done).length;
-  const greeting = greetingFor(today);
   const first = name.trim().split(" ")[0];
+  const activeModules = journeyPlan.modules.filter((module) => module.enabled);
+  const legacyOnly = isLegacyGeneratedJourney(activeModules);
+  const closed =
+    journeyMeta.status === "completed" || journeyMeta.status === "archived";
+
+  const due = legacyOnly || closed
+    ? []
+    : dueModulesForDate(activeModules, today, responses);
+  const completed = legacyOnly || closed
+    ? []
+    : completedModulesForDate(activeModules, today, responses);
+  const recentResponses = responses.filter(
+    (response) => parseISO(response.occurredOn) >= subDays(today, 6),
+  );
+  const legacyRecentDays = Object.keys(days).filter(
+    (day) => parseISO(day) >= subDays(today, 6),
+  ).length;
+  const hasVersionedActions =
+    journeyPlan.tasks.length > 0 ||
+    journeyPlan.exams.length > 0 ||
+    journeyPlan.appointments.length > 0;
+  const openTasks = tasks.filter((task) => !task.done);
+  const pendingCount = hasVersionedActions
+    ? openCareActionCount(journeyPlan, actionProgress)
+    : openTasks.length;
+  const nextV2Appointment = findNextAppointment(journeyPlan, today);
+  const nextConsult = nextV2Appointment
+    ? null
+    : findNextConsult(consults, today);
 
   return (
     <div className="space-y-5">
-      <header className="space-y-1">
+      <header>
         <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">
           {format(today, "MMMM yyyy", { locale: ptBR })}
         </p>
-        <h1 className="font-display text-3xl font-semibold tracking-tight">
-          {greeting}
+        <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">
+          {greetingFor(today)}
           {first ? `, ${first}` : ""}
         </h1>
-        <p className="text-sm text-muted-foreground first-letter:uppercase">{formatLong(today)}</p>
+        <p className="mt-1 text-sm text-muted-foreground first-letter:uppercase">
+          {formatLong(today)}
+        </p>
       </header>
 
-      {role === "patient" && (
-        <Card className="overflow-hidden">
-          <CardContent className="flex items-center justify-between gap-3 p-5">
-            <div>
-              <p className="font-display text-lg font-semibold">Como será nossa jornada</p>
-              <p className="text-sm text-muted-foreground">
-                Veja o plano montado para você.
-              </p>
-            </div>
-            <Button asChild>
-              <Link to="/jornada">
-                Abrir
-                <ArrowRight />
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {plan.motivation && (
-        <section className="rounded-xl bg-accent/70 p-4 text-accent-foreground">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
-            Sua jornada
-          </p>
-          <p className="mt-1 text-sm leading-relaxed">{plan.motivation}</p>
-        </section>
-      )}
-
-      {role === "doctor" && patients.find((p) => p.id === journeyId)?.pending && inviteCode && (
-        <section className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
-            Aguardando o paciente
-          </p>
-          <p className="mt-1 text-sm">
-            Envie o código{" "}
-            <span className="font-mono tracking-[0.18em]">{inviteCode}</span>. Quando
-            ele entrar no app com esse código, o plano já aparece montado.
-          </p>
-        </section>
-      )}
-
-      {role === "doctor" && !patients.find((p) => p.id === journeyId)?.pending && (
-        <p className="text-sm text-muted-foreground">
-          Você está vendo a jornada compartilhada. Qualquer alteração fica
-          disponível para o paciente na conta dele.
+      <section className="rounded-xl bg-accent/60 p-5 text-accent-foreground">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
+          Sua Jornada
+          {journeyMeta.currentVersion > 0 ? ` · versão ${journeyMeta.currentVersion}` : ""}
         </p>
-      )}
-
-      {plan.workOn && (
-        <section className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
-            O que vamos trabalhar
-          </p>
-          <p className="mt-1 text-sm leading-relaxed">{plan.workOn}</p>
-        </section>
-      )}
-
-      {role === "doctor" && <NoticeFeed />}
-
-      {role === "doctor" ? (
-        <Card className="overflow-hidden">
-          <CardContent className="flex items-center justify-between gap-3 p-5">
-            <div>
-              <p className="font-display text-lg font-semibold">Plano deste paciente</p>
-              <p className="text-sm text-muted-foreground">
-                Ajuste consultas, pilares e tarefas na Jornada.
-              </p>
-            </div>
-            <Button asChild>
-              <Link to="/jornada">
-                Montar
-                <ArrowRight />
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="overflow-hidden">
-          <CardContent className="flex items-center justify-between gap-3 p-5">
-            <div>
-              <p className="font-display text-lg font-semibold">Registro de hoje</p>
-              <p className="text-sm text-muted-foreground">
-                {doneToday ? "Você já anotou este dia." : "Ainda não preenchido."}
-              </p>
-            </div>
-            <Button asChild>
-              <Link to="/hoje">
-                {doneToday ? "Revisar" : "Registrar"}
-                <ArrowRight />
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
-        <div className="mb-4 flex items-baseline justify-between">
-          <h2 className="font-display text-lg font-semibold">Este mês</h2>
-          <Link to="/mes" className="text-xs font-medium text-primary">
-            Ver calendários
+        <h2 className="mt-1 font-display text-xl font-semibold">
+          {journeyPlan.title || "Acompanhamento atual"}
+        </h2>
+        {journeyPlan.objective && (
+          <p className="mt-2 text-sm leading-relaxed">{journeyPlan.objective}</p>
+        )}
+        <Button asChild variant="outline" className="mt-4">
+          <Link to="/jornada">
+            Ver Jornada
+            <ArrowRight />
           </Link>
-        </div>
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          <HabitRing
-            value={stats.applications}
-            max={5}
-            label="Aplicações"
-            detail={`${stats.applications} no mês`}
-          />
-          <HabitRing
-            value={stats.walks}
-            max={stats.daysTotal}
-            label="Caminhada"
-            detail={`${stats.walks} ${stats.walks === 1 ? "dia" : "dias"} · ${stats.walkMinutes} min`}
-          />
-          <HabitRing
-            value={stats.gymSessions}
-            max={stats.gymTarget}
-            label="Musculação"
-            detail={`${stats.gymSessions} de ${stats.gymTarget} (meta 3×/sem)`}
-          />
-          <HabitRing
-            value={stats.cpapNights}
-            max={stats.daysTotal}
-            label="CPAP"
-            detail={
-              stats.cpapNights
-                ? `${stats.cpapAvg.toFixed(1)} h média · ${stats.cpapFullNights} ${stats.cpapFullNights === 1 ? "noite completa" : "noites completas"}`
-                : "Sem registros"
-            }
-          />
-          <HabitRing
-            value={stats.mealsOk}
-            max={stats.daysTotal}
-            label="Refeições"
-            detail={`${stats.mealsOk} ${stats.mealsOk === 1 ? "dia ok" : "dias ok"} · ${stats.mealsFast} ${stats.mealsFast === 1 ? "jejum" : "jejuns"}`}
-          />
-        </div>
-        <div className="mt-4">
-          <div className="mb-1 flex justify-between text-xs text-muted-foreground">
-            <span>Dias com algum registro</span>
-            <span className="tabular-nums">
-              {stats.daysLogged}/{stats.daysTotal}
-            </span>
-          </div>
-          <Progress value={(stats.daysLogged / stats.daysTotal) * 100} />
-        </div>
-      </section>
-
-      <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
-        <div className="mb-3 flex items-center gap-2">
-          <Stethoscope className="size-4 text-primary" />
-          <h2 className="font-display text-lg font-semibold">Próxima consulta</h2>
-        </div>
-        {shown ? (
-          <div>
-            <p className="text-sm font-medium">
-              Etapa {shown.stage} · {shown.period}
-            </p>
-            <p className="text-sm text-muted-foreground">{shown.focus}</p>
-            <p className="mt-2 text-sm">
-              {shown.date
-                ? format(parseISO(shown.date), "d 'de' MMMM", { locale: ptBR })
-                : "Data ainda não definida"}
-            </p>
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">Nenhuma consulta pendente.</p>
-        )}
-      </section>
-
-      <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
-        <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="font-display text-lg font-semibold">Tarefas iniciais</h2>
-          <span className="text-xs tabular-nums text-muted-foreground">
-            {tasksDone}/{tasks.length}
-          </span>
-        </div>
-        <Progress value={(tasksDone / tasks.length) * 100} />
-        <ul className="mt-3 space-y-1.5">
-          {tasks
-            .filter((t) => !t.done)
-            .slice(0, 3)
-            .map((t) => (
-              <li key={t.id} className="text-sm text-muted-foreground">
-                {t.title}
-              </li>
-            ))}
-        </ul>
-        {tasksDone === tasks.length && (
-          <Badge variant="mint" className="mt-3">
-            Todas concluídas
-          </Badge>
-        )}
-        <Button asChild variant="ghost" className="mt-2 w-full">
-          <Link to="/jornada">Ver checklist</Link>
         </Button>
       </section>
 
-      {role === "patient" && (
+      {!legacyOnly && !closed && (
+        <section className="grid gap-3 sm:grid-cols-3">
+          <SummaryCard
+            label="Para hoje"
+            value={String(due.length)}
+            detail={
+              due.length
+                ? `${due.length} ${due.length === 1 ? "registro previsto" : "registros previstos"}`
+                : "Nada pendente neste momento"
+            }
+            icon={ClipboardCheck}
+          />
+          <SummaryCard
+            label="Concluído hoje"
+            value={String(completed.length)}
+            detail="Registros previstos já realizados"
+            icon={CheckCircle2}
+          />
+          <SummaryCard
+            label="Últimos 7 dias"
+            value={String(recentResponses.length)}
+            detail="Registros enviados"
+            icon={CalendarDays}
+          />
+        </section>
+      )}
+
+      {legacyOnly && (
+        <section className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
+          <p className="text-xs text-muted-foreground">Últimos 7 dias</p>
+          <p className="mt-1 font-display text-2xl font-semibold">
+            {legacyRecentDays}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            dias com dados no acompanhamento anterior
+          </p>
+        </section>
+      )}
+
+      {closed ? (
+        <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
+          <p className="font-display text-lg font-semibold">Ciclo encerrado</p>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            Esta Jornada está {journeyMeta.status === "completed" ? "concluída" : "arquivada"}.
+            Seus registros permanecem disponíveis em Evolução.
+          </p>
+        </section>
+      ) : (
+        <ActionCard
+          title="Hoje"
+          detail={
+            legacyOnly
+              ? "Abra seu registro diário."
+              : due.length
+                ? "Há itens previstos na sua Jornada."
+                : "Nenhum registro previsto agora."
+          }
+          to="/hoje"
+          buttonLabel={due.length || legacyOnly ? "Abrir" : "Ver hoje"}
+        />
+      )}
+
+      <section className="grid gap-3 sm:grid-cols-2">
+        <InfoCard
+          title="Próxima consulta"
+          content={
+            nextV2Appointment
+              ? format(parseISO(nextV2Appointment.date), "d 'de' MMMM", { locale: ptBR })
+              : nextConsult
+                ? nextConsult.date
+                  ? format(parseISO(nextConsult.date), "d 'de' MMMM", { locale: ptBR })
+                  : "Data ainda não definida"
+                : "Nenhuma consulta prevista"
+          }
+          detail={
+            nextV2Appointment?.appointment.notes ||
+            nextV2Appointment?.appointment.professional ||
+            nextConsult?.focus ||
+            undefined
+          }
+        />
+        <InfoCard
+          title="Pendências"
+          content={
+            pendingCount
+              ? `${pendingCount} ${pendingCount === 1 ? "item" : "itens"}`
+              : "Nenhuma tarefa pendente"
+          }
+          detail="Consultas, exames e tarefas do acompanhamento."
+          action={
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/pendencias">Ver pendências</Link>
+            </Button>
+          }
+        />
+      </section>
+
+      <ActionCard
+        title="Evolução"
+        detail="Veja seus registros ao longo do tempo, sem pontuação de desempenho."
+        to="/mes"
+        buttonLabel="Abrir"
+      />
+
       <aside className="rounded-xl bg-warn p-4 text-warn-foreground">
         <p className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em]">
           <TriangleAlert className="size-3.5" />
@@ -261,18 +220,268 @@ function Home() {
         </p>
         <p className="text-sm leading-relaxed">{EMERGENCY_COPY}</p>
       </aside>
-      )}
-
-      <p className="px-1 pb-2 text-xs leading-relaxed text-muted-foreground">
-        {CARE_FOCUS} Próximo mês: {format(addMonths(today, 1), "MMMM", { locale: ptBR })}.
-      </p>
     </div>
   );
 }
 
+function DoctorHome() {
+  const patientName = useJournal((s) => s.patientName);
+  const journeyPlan = useJournal((s) => s.publishedJourneyPlan);
+  const journeyMeta = useJournal((s) => s.journeyMeta);
+  const responses = useJournal((s) => s.journeyResponses);
+  const tasks = useJournal((s) => s.tasks);
+  const consults = useJournal((s) => s.consults);
+  const actionProgress = useJournal((s) => s.journeyActionProgress);
+  const inviteCode = useJournal((s) => s.inviteCode);
+  const patients = useJournal((s) => s.patients);
+  const journeyId = useJournal((s) => s.journeyId);
+  const patientSummary = patients.find((patient) => patient.journeyId === journeyId);
+  const activeModules = journeyPlan.modules.filter((module) => module.enabled);
+  const hasVersionedActions =
+    journeyPlan.tasks.length > 0 ||
+    journeyPlan.exams.length > 0 ||
+    journeyPlan.appointments.length > 0;
+  const openTasks = tasks.filter((task) => !task.done);
+  const pendingCount = hasVersionedActions
+    ? openCareActionCount(journeyPlan, actionProgress, "doctor")
+    : openTasks.length;
+  const nextV2Appointment = findNextAppointment(journeyPlan, new Date());
+  const nextConsult = nextV2Appointment ? null : findNextConsult(consults, new Date());
+  const lastResponse = [...responses].sort((a, b) =>
+    b.occurredOn.localeCompare(a.occurredOn),
+  )[0];
+
+  return (
+    <div className="space-y-5">
+      <header>
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">
+          Visão geral
+        </p>
+        <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">
+          {patientName || "Paciente"}
+        </h1>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Badge variant="outline">
+            {statusLabel(journeyMeta.status)}
+          </Badge>
+          {journeyMeta.currentVersion > 0 && (
+            <Badge variant="outline">Versão {journeyMeta.currentVersion}</Badge>
+          )}
+        </div>
+      </header>
+
+      {patientSummary?.pending && inviteCode && (
+        <section className="rounded-xl bg-accent/60 p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+            Aguardando entrada do paciente
+          </p>
+          <p className="mt-2 text-sm">
+            Código de convite:{" "}
+            <span className="font-mono font-medium tracking-[0.18em]">{inviteCode}</span>
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            O paciente só conseguirá utilizar uma Jornada publicada.
+          </p>
+        </section>
+      )}
+
+      <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">
+          Jornada atual
+        </p>
+        <h2 className="mt-1 font-display text-xl font-semibold">
+          {journeyPlan.title || "Sem título"}
+        </h2>
+        {journeyPlan.objective && (
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            {journeyPlan.objective}
+          </p>
+        )}
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <SummaryCard
+          label="Módulos ativos"
+          value={String(activeModules.length)}
+          detail="Definidos neste ciclo"
+          icon={RouteIcon}
+        />
+        <SummaryCard
+          label="Registros"
+          value={String(responses.length)}
+          detail={
+            lastResponse
+              ? `Último em ${format(parseISO(lastResponse.occurredOn), "dd/MM")}`
+              : "Nenhum registro V2"
+          }
+          icon={ClipboardCheck}
+        />
+        <SummaryCard
+          label="Pendências"
+          value={String(pendingCount)}
+          detail="Tarefas e exames ainda abertos"
+          icon={CheckCircle2}
+        />
+        <SummaryCard
+          label="Próxima consulta"
+          value={
+            nextV2Appointment
+              ? format(parseISO(nextV2Appointment.date), "dd/MM")
+              : nextConsult?.date
+                ? format(parseISO(nextConsult.date), "dd/MM")
+                : "—"
+          }
+          detail={
+            nextV2Appointment
+              ? nextV2Appointment.appointment.professional || "Consulta prevista"
+              : nextConsult
+                ? nextConsult.focus || "Consulta prevista"
+                : "Sem consulta"
+          }
+          icon={CalendarDays}
+        />
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-3">
+        <ActionCard
+          title="Jornada"
+          detail="Editar rascunho, revisar módulos e publicar nova versão."
+          to="/jornada"
+          buttonLabel="Abrir"
+        />
+        <ActionCard
+          title="Registros"
+          detail="Ver dados informados pelo paciente em modo somente leitura."
+          to="/mes"
+          buttonLabel="Abrir"
+        />
+        <ActionCard
+          title="Pendências"
+          detail="Revisar tarefas, exames e próximos encontros."
+          to="/pendencias"
+          buttonLabel="Abrir"
+        />
+      </section>
+
+      <JourneyHistoryPanel />
+      <DoctorPreConsultSummary />
+      <AlertFeed journeyOnly />
+      <NoticeFeed />
+    </div>
+  );
+}
+
+function ActionCard({
+  title,
+  detail,
+  to,
+  buttonLabel,
+}: {
+  title: string;
+  detail: string;
+  to: "/hoje" | "/jornada" | "/mes" | "/pendencias";
+  buttonLabel: string;
+}) {
+  return (
+    <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
+      <h2 className="font-display text-lg font-semibold">{title}</h2>
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{detail}</p>
+      <Button asChild className="mt-4">
+        <Link to={to}>
+          {buttonLabel}
+          <ArrowRight />
+        </Link>
+      </Button>
+    </section>
+  );
+}
+
+function InfoCard({
+  title,
+  content,
+  detail,
+  action,
+}: {
+  title: string;
+  content: string;
+  detail?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <section className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
+      <p className="text-xs text-muted-foreground">{title}</p>
+      <p className="mt-1 font-display text-lg font-semibold">{content}</p>
+      {detail && <p className="mt-1 text-sm text-muted-foreground">{detail}</p>}
+      {action && <div className="mt-2">{action}</div>}
+    </section>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  detail,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  icon: typeof ClipboardCheck;
+}) {
+  return (
+    <section className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <Icon className="size-4 text-primary" />
+      </div>
+      <p className="mt-1 font-display text-2xl font-semibold tabular-nums">{value}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+    </section>
+  );
+}
+
+function findNextConsult(
+  consults: Array<{ date: string; focus: string; stage: number; period: string }>,
+  today: Date,
+) {
+  const todayKey = format(today, "yyyy-MM-dd");
+  const dated = consults
+    .filter((consult) => consult.date && consult.date >= todayKey)
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+  return dated ?? consults.find((consult) => !consult.date);
+}
+
+function findNextAppointment(
+  plan: JourneyPlanV2,
+  today: Date,
+) {
+  const todayKey = format(today, "yyyy-MM-dd");
+  return plan.appointments
+    .filter(
+      (appointment) =>
+        appointment.visibleToPatient &&
+        appointment.status !== "cancelled" &&
+        appointment.status !== "completed",
+    )
+    .map((appointment) => ({
+      appointment,
+      date: resolvedAppointmentDate(plan, appointment),
+    }))
+    .filter((item) => item.date && item.date >= todayKey)
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+}
+
+function statusLabel(status: string): string {
+  if (status === "published") return "Publicada";
+  if (status === "in_review") return "Em revisão";
+  if (status === "completed") return "Concluída";
+  if (status === "archived") return "Arquivada";
+  return "Rascunho";
+}
+
 function greetingFor(date: Date) {
-  const h = date.getHours();
-  if (h < 12) return "Bom dia";
-  if (h < 18) return "Boa tarde";
+  const hour = date.getHours();
+  if (hour < 12) return "Bom dia";
+  if (hour < 18) return "Boa tarde";
   return "Boa noite";
 }

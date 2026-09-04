@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Journey and app tests
+        run: |
+          node --test scripts/migration-plan.test.mjs scripts/doctor-access-security.test.mjs scripts/patient-journey-cycles.test.mjs scripts/v2-journey-driven-ui.test.mjs scripts/deployment-compatibility.test.mjs scripts/migrations-smoke.test.mjs
+          node --experimental-strip-types --test \
+            src/lib/journey-schedule.test.ts \
+            src/lib/journey-response-format.test.ts \
+            src/lib/journey-actions.test.ts \
+            src/lib/journey-alerts.test.ts \
+            src/lib/pre-consult-summary.test.ts \
+            src/lib/doctor-patient-dashboard.test.ts \
+            src/lib/app-data/app-data.test.ts \
+            src/lib/auth/gate-identity.test.ts
+
+      - name: Legacy template suite
+        continue-on-error: true
+        run: npm test
+
+      - name: Development build
+        run: npm run build:dev

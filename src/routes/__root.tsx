@@ -16,7 +16,7 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "Plano de acompanhamento e registros mensais do Método AGIR — medicação, movimento, sono e refeições.",
+          "Plataforma de acompanhamento longitudinal com Jornadas personalizadas e registros definidos para cada ciclo.",
       },
     ],
     links: [
