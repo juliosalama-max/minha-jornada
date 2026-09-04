@@ -1107,10 +1107,22 @@ export const saveProfile = createServerFn({ method: "POST" })
     }
 
     const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+    const name = data.profile.name.trim();
+    await sql`
+      update patients
+      set name = ${name},
+          updated_at = now()
+      where id = ${journey.patient_id}
+    `;
     await sql`
       update journeys
-      set name = ${data.profile.name},
-          first_consult_date = ${data.profile.firstConsultDate},
+      set name = ${name},
+          updated_at = now()
+      where patient_id = ${journey.patient_id}
+    `;
+    await sql`
+      update journeys
+      set first_consult_date = ${data.profile.firstConsultDate},
           injection_weekday = ${data.profile.injectionWeekday},
           dose = ${data.profile.dose},
           updated_at = now()
@@ -1288,6 +1300,145 @@ export const publishJourney = createServerFn({ method: "POST" })
 
     const rows = await sql<JourneyRow>`select * from journeys where id = ${journey.id}`;
     return loadSnapshot(sql, rows[0]!, "doctor");
+  });
+
+export const closeJourneyCycle = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    (data: {
+      journeyId?: string | null;
+      status: "completed" | "archived";
+    }) => data,
+  )
+  .handler(async ({ context, data }): Promise<Bootstrap> => {
+    const sql = await getSql();
+    const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+
+    if (data.status === "completed" && journey.current_version < 1) {
+      throw new Error("Publique a Jornada antes de concluí-la.");
+    }
+    if (
+      journey.journey_status === "completed" ||
+      journey.journey_status === "archived"
+    ) {
+      throw new Error("Esta Jornada já está encerrada.");
+    }
+
+    await sql`
+      update journeys
+      set journey_status = ${data.status},
+          updated_at = now()
+      where id = ${journey.id}
+    `;
+
+    return loadBootstrap(sql, context.userId, journey.id);
+  });
+
+export const createNextJourneyCycle = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    (data: {
+      journeyId?: string | null;
+      firstConsultDate?: string;
+    }) => data,
+  )
+  .handler(async ({ context, data }): Promise<Bootstrap> => {
+    const sql = await getSql();
+    const previous = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+
+    if (
+      previous.journey_status !== "completed" &&
+      previous.journey_status !== "archived"
+    ) {
+      throw new Error("Conclua ou arquive o ciclo atual antes de iniciar outro.");
+    }
+
+    const activeRows = await sql<{ id: string }>`
+      select id
+      from journeys
+      where patient_id = ${previous.patient_id}
+        and journey_status in ('draft', 'published', 'in_review')
+      limit 1
+    `;
+    if (activeRows[0]) {
+      throw new Error("Este paciente já possui uma Jornada ativa.");
+    }
+
+    const patientRows = await sql<PatientRow>`
+      select * from patients where id = ${previous.patient_id}
+    `;
+    const patient = patientRows[0];
+    if (!patient) throw new Error("Paciente não encontrado.");
+
+    const seed = emptySnapshot();
+    const first = String(data.firstConsultDate ?? "");
+    const initialJourneyPlan: JourneyPlanV2 = {
+      ...seed.journeyPlan,
+      startDate: first,
+      appointments: first
+        ? [
+            {
+              id: crypto.randomUUID(),
+              type: "doctor",
+              professional: "",
+              date: first,
+              offsetDays: null,
+              mode: "unspecified",
+              notes: "Consulta inicial do novo ciclo",
+              status: "scheduled",
+              visibleToPatient: true,
+            },
+          ]
+        : [],
+    };
+    const journeyId = crypto.randomUUID();
+    const invite = makeInviteCode();
+
+    await sql`
+      insert into journeys (
+        id,
+        patient_id,
+        patient_user_id,
+        doctor_user_id,
+        invite_code,
+        onboarded,
+        name,
+        first_consult_date,
+        injection_weekday,
+        dose,
+        consults,
+        nutrition,
+        tasks,
+        plan,
+        journey_status,
+        draft_plan,
+        published_plan,
+        current_version,
+        plan_updated_at
+      ) values (
+        ${journeyId},
+        ${patient.id},
+        ${patient.patient_user_id},
+        ${context.userId},
+        ${invite},
+        ${Boolean(patient.patient_user_id)},
+        ${patient.name},
+        ${first},
+        null,
+        '',
+        ${JSON.stringify(seed.consults)},
+        ${JSON.stringify(seed.nutrition)},
+        ${JSON.stringify(seed.tasks)},
+        ${JSON.stringify(seed.plan)},
+        'draft',
+        ${JSON.stringify(initialJourneyPlan)},
+        '{}',
+        0,
+        now()
+      )
+    `;
+
+    return loadBootstrap(sql, context.userId, journeyId);
   });
 
 export const saveJourneyResponse = createServerFn({ method: "POST" })
