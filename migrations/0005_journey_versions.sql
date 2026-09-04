@@ -49,8 +49,7 @@ create table if not exists journey_versions (
 -- available" semantics instead of becoming invisible V2 drafts.
 create or replace function prepare_legacy_journey_v2_fields()
 returns trigger
-language plpgsql
-as $
+as $fn$
 begin
   if new.current_version = 0
      and new.draft_plan = '{}'
@@ -64,7 +63,7 @@ begin
   end if;
   return new;
 end;
-$;
+$fn$ language plpgsql;
 
 drop trigger if exists journeys_legacy_v2_prepare on journeys;
 
@@ -75,8 +74,7 @@ execute function prepare_legacy_journey_v2_fields();
 
 create or replace function record_legacy_journey_initial_version()
 returns trigger
-language plpgsql
-as $
+as $fn$
 begin
   if new.current_version >= 1 then
     insert into journey_versions (
@@ -98,7 +96,7 @@ begin
   end if;
   return new;
 end;
-$;
+$fn$ language plpgsql;
 
 drop trigger if exists journeys_legacy_initial_version on journeys;
 
