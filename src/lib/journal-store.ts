@@ -83,7 +83,7 @@ type JournalState = JournalSnapshot & {
   alerts: DoctorAlert[];
   applyBootstrap: (b: Bootstrap) => void;
   hydrate: (journeyId?: string | null) => Promise<void>;
-  chooseRole: (role: Role, name: string, inviteCode?: string) => Promise<void>;
+  chooseRole: (role: "patient", name: string, inviteCode?: string) => Promise<void>;
   linkCode: (code: string) => Promise<void>;
   claimCode: (code: string) => Promise<void>;
   createPlan: (data: { patientName: string; firstConsultDate?: string }) => Promise<void>;
