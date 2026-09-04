@@ -8,6 +8,7 @@ import type {
   JournalSnapshot,
   JourneyActionProgress,
   JourneyAnswerValue,
+  JourneyCycleSummary,
   JourneyMeta,
   JourneyModule,
   JourneyModuleResponse,
@@ -34,6 +35,7 @@ import { moduleIsDue, responseMatchesPeriod } from "@/lib/journey-schedule";
 
 type JourneyRow = {
   id: string;
+  patient_id: string;
   patient_user_id: string | null;
   doctor_user_id: string | null;
   invite_code: string;
@@ -52,6 +54,16 @@ type JourneyRow = {
   current_version: number;
   published_at: string | null;
   plan_updated_at: string | null;
+  updated_at: string;
+};
+
+type PatientRow = {
+  id: string;
+  doctor_user_id: string | null;
+  patient_user_id: string | null;
+  name: string;
+  created_at: string;
+  updated_at: string;
 };
 
 function parseJson<T>(raw: string | null | undefined, fallback: T): T {
@@ -82,6 +94,38 @@ function journeyMeta(row: JourneyRow): JourneyMeta {
     publishedAt: row.published_at,
     draftUpdatedAt: row.plan_updated_at,
   };
+}
+
+function journeyCycleSummary(row: JourneyRow): JourneyCycleSummary {
+  const source =
+    row.journey_status === "draft" || row.journey_status === "in_review"
+      ? row.draft_plan || row.published_plan || row.plan
+      : row.published_plan || row.draft_plan || row.plan;
+  const plan = parseJourneyPlan(source, row.plan);
+  return {
+    id: row.id,
+    title: plan.title || "Jornada",
+    status: row.journey_status,
+    currentVersion: Number(row.current_version || 0),
+    startDate: plan.startDate || row.first_consult_date || "",
+    publishedAt: row.published_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function sortJourneyCycles(rows: JourneyRow[]): JourneyRow[] {
+  return [...rows].sort((a, b) => {
+    const aActive =
+      a.journey_status === "draft" ||
+      a.journey_status === "published" ||
+      a.journey_status === "in_review";
+    const bActive =
+      b.journey_status === "draft" ||
+      b.journey_status === "published" ||
+      b.journey_status === "in_review";
+    if (aActive !== bActive) return aActive ? -1 : 1;
+    return b.updated_at.localeCompare(a.updated_at);
+  });
 }
 
 function questionConditionMatches(
@@ -323,39 +367,6 @@ function makeInviteCode() {
   return [...bytes].map((b) => alphabet[b % alphabet.length]).join("");
 }
 
-async function createPatientJourney(sql: Sql, userId: string, name: string) {
-  const seed = emptySnapshot();
-  for (let i = 0; i < 8; i++) {
-    const id = crypto.randomUUID();
-    const invite = makeInviteCode();
-    try {
-      await sql`
-        insert into journeys (
-          id, patient_user_id, invite_code, onboarded, name,
-          first_consult_date, injection_weekday, dose, consults, nutrition, tasks, plan,
-          journey_status, draft_plan, published_plan, current_version
-        ) values (
-          ${id}, ${userId}, ${invite}, false, ${name},
-          '', null, '',
-          ${JSON.stringify(seed.consults)},
-          ${JSON.stringify(seed.nutrition)},
-          ${JSON.stringify(seed.tasks)},
-          ${JSON.stringify(seed.plan)},
-          'draft',
-          ${JSON.stringify(seed.journeyPlan)},
-          '{}',
-          0
-        )
-      `;
-      const rows = await sql<JourneyRow>`select * from journeys where id = ${id}`;
-      return rows[0]!;
-    } catch {
-      /* unique invite collision — retry */
-    }
-  }
-  throw new Error("Não foi possível criar o código de acompanhamento.");
-}
-
 type ProfileRow = {
   user_id: string;
   role: Role;
@@ -424,7 +435,32 @@ async function requireAuthorizedDoctor(
 
 async function patientJourney(sql: Sql, userId: string) {
   const rows = await sql<JourneyRow>`
-    select * from journeys where patient_user_id = ${userId}
+    select journey.*
+    from journeys journey
+    join patients patient on patient.id = journey.patient_id
+    where patient.patient_user_id = ${userId}
+      and journey.journey_status <> 'draft'
+    order by
+      case
+        when journey.journey_status in ('published', 'in_review') then 0
+        when journey.journey_status = 'completed' then 1
+        else 2
+      end,
+      journey.updated_at desc
+    limit 1
+  `;
+  return rows[0] ?? null;
+}
+
+async function activePatientJourney(sql: Sql, userId: string) {
+  const rows = await sql<JourneyRow>`
+    select journey.*
+    from journeys journey
+    join patients patient on patient.id = journey.patient_id
+    where patient.patient_user_id = ${userId}
+      and journey.journey_status in ('published', 'in_review')
+    order by journey.updated_at desc
+    limit 1
   `;
   return rows[0] ?? null;
 }
@@ -434,8 +470,10 @@ async function resolvePatientJourney(sql: Sql, userId: string) {
   if (!profile || profile.role !== "patient") {
     throw new Error("Apenas o paciente pode registrar esta informação.");
   }
-  const row = await patientJourney(sql, userId);
-  if (!row) throw new Error("Jornada não encontrada");
+  const row = await activePatientJourney(sql, userId);
+  if (!row) {
+    throw new Error("Não há uma Jornada ativa disponível para registro.");
+  }
   return row;
 }
 
@@ -448,6 +486,15 @@ async function resolveDoctorJourney(sql: Sql, userId: string, journeyId?: string
   `;
   if (!rows[0]) throw new Error("Sem permissão para esta jornada");
   return rows[0];
+}
+
+function assertJourneyEditable(journey: JourneyRow) {
+  if (
+    journey.journey_status === "completed" ||
+    journey.journey_status === "archived"
+  ) {
+    throw new Error("Este ciclo está encerrado e não pode mais ser alterado.");
+  }
 }
 
 async function doctorNameFor(sql: Sql, doctorUserId: string | null) {
@@ -618,6 +665,7 @@ export type Bootstrap =
       snapshot: JournalSnapshot | null;
       inviteCode: string | null;
       patientName: string | null;
+      journeyHistory: JourneyCycleSummary[];
       notices: DoctorNotice[];
       alerts: DoctorAlert[];
     };
@@ -651,27 +699,58 @@ async function loadBootstrap(
     };
   }
 
-  const patientRows = await sql<JourneyRow>`
-    select * from journeys
+  const patientRows = await sql<PatientRow>`
+    select *
+    from patients
     where doctor_user_id = ${userId}
-    order by name asc
+    order by name asc, created_at asc
   `;
-  const patients: PatientSummary[] = patientRows.map((r) => ({
-    id: r.id,
-    name: r.name || (r.patient_user_id ? "Paciente" : "Aguardando paciente"),
-    inviteCode: r.invite_code,
-    onboarded: Boolean(r.onboarded),
-    pending: !r.patient_user_id,
-    journeyStatus: r.journey_status,
-    currentVersion: Number(r.current_version || 0),
-  }));
+  const journeyRows = await sql<JourneyRow>`
+    select *
+    from journeys
+    where doctor_user_id = ${userId}
+    order by updated_at desc
+  `;
+
+  const patients: PatientSummary[] = patientRows.map((patient) => {
+    const cycles = sortJourneyCycles(
+      journeyRows.filter((journey) => journey.patient_id === patient.id),
+    );
+    const current = cycles[0];
+    return {
+      id: patient.id,
+      journeyId: current?.id ?? null,
+      name:
+        patient.name ||
+        current?.name ||
+        (patient.patient_user_id ? "Paciente" : "Aguardando paciente"),
+      inviteCode: current?.invite_code ?? "",
+      onboarded: Boolean(current?.onboarded),
+      pending: !patient.patient_user_id,
+      journeyStatus: current?.journey_status,
+      currentVersion: Number(current?.current_version || 0),
+      journeyCount: cycles.length,
+    };
+  });
 
   let active: JourneyRow | undefined;
   if (requestedJourneyId) {
-    active = patientRows.find((r) => r.id === requestedJourneyId);
-  } else if (requestedJourneyId === undefined && patientRows.length === 1) {
-    active = patientRows[0];
+    active = journeyRows.find((row) => row.id === requestedJourneyId);
+  } else if (requestedJourneyId === undefined && patients.length === 1) {
+    const currentId = patients[0]?.journeyId;
+    active = currentId
+      ? journeyRows.find((row) => row.id === currentId)
+      : undefined;
   }
+
+  const activePatient = active
+    ? patientRows.find((patient) => patient.id === active!.patient_id)
+    : undefined;
+  const journeyHistory = active
+    ? sortJourneyCycles(
+        journeyRows.filter((journey) => journey.patient_id === active!.patient_id),
+      ).map(journeyCycleSummary)
+    : [];
 
   return {
     kind: "doctor",
@@ -680,7 +759,8 @@ async function loadBootstrap(
     doctorName: profile.display_name,
     snapshot: active ? await loadSnapshot(sql, active, "doctor") : null,
     inviteCode: active?.invite_code ?? null,
-    patientName: active?.name ?? null,
+    patientName: activePatient?.name ?? active?.name ?? null,
+    journeyHistory,
     notices: await loadNotices(sql, userId),
     alerts: await loadAlerts(sql, userId),
   };
@@ -809,27 +889,47 @@ export const chooseRole = createServerFn({ method: "POST" })
   });
 
 async function claimJourney(sql: Sql, userId: string, code: string, displayName?: string) {
-  const existing = await patientJourney(sql, userId);
-  if (existing) throw new Error("Você já tem uma jornada nesta conta.");
+  const existingActive = await activePatientJourney(sql, userId);
+  if (existingActive) {
+    throw new Error("Você já possui uma Jornada ativa nesta conta.");
+  }
+
   const rows = await sql<JourneyRow>`
     select * from journeys where invite_code = ${code}
   `;
   const journey = rows[0];
   if (!journey) throw new Error("Código não encontrado.");
-  if (journey.patient_user_id && journey.patient_user_id !== userId) {
-    throw new Error("Este código já foi usado por outro paciente.");
-  }
   if (journey.journey_status === "draft" || journey.current_version < 1) {
     throw new Error("A Jornada ainda não foi publicada pela equipe.");
   }
-  const name = journey.name || displayName || "";
+
+  const patientRows = await sql<PatientRow>`
+    select * from patients where id = ${journey.patient_id}
+  `;
+  const patient = patientRows[0];
+  if (!patient) throw new Error("Paciente não encontrado para esta Jornada.");
+  if (patient.patient_user_id && patient.patient_user_id !== userId) {
+    throw new Error("Este código já foi usado por outro paciente.");
+  }
+
+  const name = patient.name || journey.name || displayName || "";
+
+  await sql`
+    update patients
+    set patient_user_id = ${userId},
+        name = ${name},
+        updated_at = now()
+    where id = ${patient.id}
+  `;
+
   await sql`
     update journeys
     set patient_user_id = ${userId},
         name = ${name},
         updated_at = now()
-    where id = ${journey.id}
+    where patient_id = ${patient.id}
   `;
+
   if (name) {
     await sql`update profiles set display_name = ${name} where user_id = ${userId}`;
   }
@@ -865,35 +965,52 @@ export const createDoctorPlan = createServerFn({ method: "POST" })
           ],
         }
       : seed.journeyPlan;
-    for (let i = 0; i < 8; i++) {
-      const id = crypto.randomUUID();
-      const invite = makeInviteCode();
-      try {
-        await sql`
-          insert into journeys (
-            id, patient_user_id, doctor_user_id, invite_code, onboarded, name,
-            first_consult_date, injection_weekday, dose, consults, nutrition, tasks, plan,
-            journey_status, draft_plan, published_plan, current_version, plan_updated_at
-          ) values (
-            ${id}, null, ${context.userId}, ${invite}, false, ${name},
-            ${first}, null, '',
-            ${JSON.stringify(seed.consults)},
-            ${JSON.stringify(seed.nutrition)},
-            ${JSON.stringify(seed.tasks)},
-            ${JSON.stringify(seed.plan)},
-            'draft',
-            ${JSON.stringify(initialJourneyPlan)},
-            '{}',
-            0,
-            now()
-          )
-        `;
-        return loadBootstrap(sql, context.userId, id);
-      } catch {
-        /* invite collision */
-      }
+    const patientId = crypto.randomUUID();
+    const journeyId = crypto.randomUUID();
+    const invite = makeInviteCode();
+
+    await sql`
+      insert into patients (
+        id,
+        doctor_user_id,
+        patient_user_id,
+        name,
+        updated_at
+      ) values (
+        ${patientId},
+        ${context.userId},
+        null,
+        ${name},
+        now()
+      )
+    `;
+
+    try {
+      await sql`
+        insert into journeys (
+          id, patient_id, patient_user_id, doctor_user_id, invite_code, onboarded, name,
+          first_consult_date, injection_weekday, dose, consults, nutrition, tasks, plan,
+          journey_status, draft_plan, published_plan, current_version, plan_updated_at
+        ) values (
+          ${journeyId}, ${patientId}, null, ${context.userId}, ${invite}, false, ${name},
+          ${first}, null, '',
+          ${JSON.stringify(seed.consults)},
+          ${JSON.stringify(seed.nutrition)},
+          ${JSON.stringify(seed.tasks)},
+          ${JSON.stringify(seed.plan)},
+          'draft',
+          ${JSON.stringify(initialJourneyPlan)},
+          '{}',
+          0,
+          now()
+        )
+      `;
+    } catch (error) {
+      await sql`delete from patients where id = ${patientId}`;
+      throw error;
     }
-    throw new Error("Não foi possível gerar o código do plano.");
+
+    return loadBootstrap(sql, context.userId, journeyId);
   });
 
 export const claimPlanByCode = createServerFn({ method: "POST" })
@@ -930,9 +1047,15 @@ export const linkPatientByCode = createServerFn({ method: "POST" })
       throw new Error("Esta jornada já está vinculada a outra profissional.");
     }
     await sql`
+      update patients
+      set doctor_user_id = ${context.userId},
+          updated_at = now()
+      where id = ${journey.patient_id}
+    `;
+    await sql`
       update journeys
       set doctor_user_id = ${context.userId}, updated_at = now()
-      where id = ${journey.id}
+      where patient_id = ${journey.patient_id}
     `;
     return loadBootstrap(sql, context.userId, journey.id);
   });
@@ -944,6 +1067,12 @@ export const saveOnboarding = createServerFn({ method: "POST" })
     const sql = await getSql();
     const journey = await resolvePatientJourney(sql, context.userId);
     const name = (data.profile.name ?? journey.name).trim();
+    await sql`
+      update patients
+      set name = ${name},
+          updated_at = now()
+      where id = ${journey.patient_id}
+    `;
     await sql`
       update journeys
       set onboarded = true,
@@ -970,9 +1099,14 @@ export const saveProfile = createServerFn({ method: "POST" })
       const journey = await resolvePatientJourney(sql, context.userId);
       const name = data.profile.name.trim();
       await sql`
+        update patients
+        set name = ${name}, updated_at = now()
+        where id = ${journey.patient_id}
+      `;
+      await sql`
         update journeys
         set name = ${name}, updated_at = now()
-        where id = ${journey.id}
+        where patient_id = ${journey.patient_id}
       `;
       await sql`
         update profiles set display_name = ${name}
@@ -982,10 +1116,22 @@ export const saveProfile = createServerFn({ method: "POST" })
     }
 
     const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+    const name = data.profile.name.trim();
+    await sql`
+      update patients
+      set name = ${name},
+          updated_at = now()
+      where id = ${journey.patient_id}
+    `;
     await sql`
       update journeys
-      set name = ${data.profile.name},
-          first_consult_date = ${data.profile.firstConsultDate},
+      set name = ${name},
+          updated_at = now()
+      where patient_id = ${journey.patient_id}
+    `;
+    await sql`
+      update journeys
+      set first_consult_date = ${data.profile.firstConsultDate},
           injection_weekday = ${data.profile.injectionWeekday},
           dose = ${data.profile.dose},
           updated_at = now()
@@ -1012,6 +1158,7 @@ export const saveConsults = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+    assertJourneyEditable(journey);
     const consults = data.consults ?? parseJson(journey.consults, emptySnapshot().consults);
     const nutrition = data.nutrition ?? parseJson(journey.nutrition, emptySnapshot().nutrition);
     await sql`
@@ -1030,6 +1177,7 @@ export const saveTasks = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+    assertJourneyEditable(journey);
     await sql`
       update journeys
       set tasks = ${JSON.stringify(data.tasks)},
@@ -1077,6 +1225,7 @@ export const savePlan = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+    assertJourneyEditable(journey);
     const legacy = normalizePlan(data.plan);
     const currentDraft = parseJourneyPlan(journey.draft_plan, journey.plan);
     const nextDraft = withLegacyPlan(currentDraft, legacy);
@@ -1103,6 +1252,7 @@ export const saveJourneyDraft = createServerFn({ method: "POST" })
   .handler(async ({ context, data }): Promise<JournalSnapshot> => {
     const sql = await getSql();
     const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+    assertJourneyEditable(journey);
     const next = normalizeJourneyPlan(data.plan);
     const nextStatus =
       journey.current_version > 0 && journey.journey_status !== "draft"
@@ -1129,6 +1279,7 @@ export const publishJourney = createServerFn({ method: "POST" })
   .handler(async ({ context, data }): Promise<JournalSnapshot> => {
     const sql = await getSql();
     const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+    assertJourneyEditable(journey);
     const draft = normalizeJourneyPlan(
       parseJson<unknown>(journey.draft_plan, parseJson<unknown>(journey.plan, {})),
     );
@@ -1163,6 +1314,145 @@ export const publishJourney = createServerFn({ method: "POST" })
 
     const rows = await sql<JourneyRow>`select * from journeys where id = ${journey.id}`;
     return loadSnapshot(sql, rows[0]!, "doctor");
+  });
+
+export const closeJourneyCycle = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    (data: {
+      journeyId?: string | null;
+      status: "completed" | "archived";
+    }) => data,
+  )
+  .handler(async ({ context, data }): Promise<Bootstrap> => {
+    const sql = await getSql();
+    const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+
+    if (data.status === "completed" && journey.current_version < 1) {
+      throw new Error("Publique a Jornada antes de concluí-la.");
+    }
+    if (
+      journey.journey_status === "completed" ||
+      journey.journey_status === "archived"
+    ) {
+      throw new Error("Esta Jornada já está encerrada.");
+    }
+
+    await sql`
+      update journeys
+      set journey_status = ${data.status},
+          updated_at = now()
+      where id = ${journey.id}
+    `;
+
+    return loadBootstrap(sql, context.userId, journey.id);
+  });
+
+export const createNextJourneyCycle = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    (data: {
+      journeyId?: string | null;
+      firstConsultDate?: string;
+    }) => data,
+  )
+  .handler(async ({ context, data }): Promise<Bootstrap> => {
+    const sql = await getSql();
+    const previous = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+
+    if (
+      previous.journey_status !== "completed" &&
+      previous.journey_status !== "archived"
+    ) {
+      throw new Error("Conclua ou arquive o ciclo atual antes de iniciar outro.");
+    }
+
+    const activeRows = await sql<{ id: string }>`
+      select id
+      from journeys
+      where patient_id = ${previous.patient_id}
+        and journey_status in ('draft', 'published', 'in_review')
+      limit 1
+    `;
+    if (activeRows[0]) {
+      throw new Error("Este paciente já possui uma Jornada ativa.");
+    }
+
+    const patientRows = await sql<PatientRow>`
+      select * from patients where id = ${previous.patient_id}
+    `;
+    const patient = patientRows[0];
+    if (!patient) throw new Error("Paciente não encontrado.");
+
+    const seed = emptySnapshot();
+    const first = String(data.firstConsultDate ?? "");
+    const initialJourneyPlan: JourneyPlanV2 = {
+      ...seed.journeyPlan,
+      startDate: first,
+      appointments: first
+        ? [
+            {
+              id: crypto.randomUUID(),
+              type: "doctor",
+              professional: "",
+              date: first,
+              offsetDays: null,
+              mode: "unspecified",
+              notes: "Consulta inicial do novo ciclo",
+              status: "scheduled",
+              visibleToPatient: true,
+            },
+          ]
+        : [],
+    };
+    const journeyId = crypto.randomUUID();
+    const invite = makeInviteCode();
+
+    await sql`
+      insert into journeys (
+        id,
+        patient_id,
+        patient_user_id,
+        doctor_user_id,
+        invite_code,
+        onboarded,
+        name,
+        first_consult_date,
+        injection_weekday,
+        dose,
+        consults,
+        nutrition,
+        tasks,
+        plan,
+        journey_status,
+        draft_plan,
+        published_plan,
+        current_version,
+        plan_updated_at
+      ) values (
+        ${journeyId},
+        ${patient.id},
+        ${patient.patient_user_id},
+        ${context.userId},
+        ${invite},
+        ${Boolean(patient.patient_user_id)},
+        ${patient.name},
+        ${first},
+        null,
+        '',
+        ${JSON.stringify(seed.consults)},
+        ${JSON.stringify(seed.nutrition)},
+        ${JSON.stringify(seed.tasks)},
+        ${JSON.stringify(seed.plan)},
+        'draft',
+        ${JSON.stringify(initialJourneyPlan)},
+        '{}',
+        0,
+        now()
+      )
+    `;
+
+    return loadBootstrap(sql, context.userId, journeyId);
   });
 
 export const saveJourneyResponse = createServerFn({ method: "POST" })

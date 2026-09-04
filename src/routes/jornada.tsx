@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Check } from "lucide-react";
+import { JourneyHistoryPanel } from "@/components/journey-history-panel";
 import { PlanEditor } from "@/components/plan-editor";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -23,8 +24,80 @@ export const Route = createFileRoute("/jornada")({ component: JornadaPage });
 
 function JornadaPage() {
   const role = useJournal((s) => s.role);
-  if (role === "doctor") return <PlanEditor />;
+  const meta = useJournal((s) => s.journeyMeta);
+  if (role === "doctor") {
+    if (meta.status === "completed" || meta.status === "archived") {
+      return <DoctorClosedJourney />;
+    }
+    return <PlanEditor />;
+  }
   return <PatientJornada />;
+}
+
+function DoctorClosedJourney() {
+  const plan = useJournal((s) => s.publishedJourneyPlan);
+  const patientName = useJournal((s) => s.patientName);
+  const meta = useJournal((s) => s.journeyMeta);
+
+  return (
+    <div className="space-y-5">
+      <header>
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">
+          Histórico
+        </p>
+        <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">
+          {plan.title || "Jornada encerrada"}
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {patientName || "Paciente"} ·{" "}
+          {meta.status === "completed" ? "ciclo concluído" : "ciclo arquivado"}
+        </p>
+      </header>
+
+      {plan.objective && (
+        <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
+          <p className="text-xs font-medium text-muted-foreground">Objetivo do ciclo</p>
+          <p className="mt-2 text-sm leading-relaxed">{plan.objective}</p>
+        </section>
+      )}
+
+      {plan.priorities.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="font-display text-lg font-semibold">Prioridades</h2>
+          {plan.priorities.map((priority) => (
+            <div
+              key={priority.id}
+              className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]"
+            >
+              <p className="text-sm font-medium">{priority.title}</p>
+              {priority.description && (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {priority.description}
+                </p>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+
+      {plan.modules.filter((module) => module.enabled).length > 0 && (
+        <section className="space-y-2">
+          <h2 className="font-display text-lg font-semibold">Módulos acompanhados</h2>
+          <div className="flex flex-wrap gap-2">
+            {plan.modules
+              .filter((module) => module.enabled)
+              .map((module) => (
+                <Badge key={module.id} variant="outline">
+                  {module.title}
+                </Badge>
+              ))}
+          </div>
+        </section>
+      )}
+
+      <JourneyHistoryPanel />
+    </div>
+  );
 }
 
 function PatientJornada() {
@@ -34,6 +107,8 @@ function PatientJornada() {
   const plan = useJournal((s) => s.plan);
   const journeyPlan = useJournal((s) => s.journeyPlan);
   const journeyMeta = useJournal((s) => s.journeyMeta);
+  const closed =
+    journeyMeta.status === "completed" || journeyMeta.status === "archived";
   const toggleTask = useJournal((s) => s.toggleTask);
   const updateTaskMeta = useJournal((s) => s.updateTaskMeta);
   const done = tasks.filter((t) => t.done).length;
@@ -303,6 +378,7 @@ function PatientJornada() {
                   <TaskRow
                     key={t.id}
                     task={t}
+                    editable={!closed}
                     onToggle={() => toggleTask(t.id)}
                     onMeta={(meta) => updateTaskMeta(t.id, meta)}
                   />
@@ -320,17 +396,24 @@ function PatientJornada() {
 
 function TaskRow({
   task,
+  editable,
   onToggle,
   onMeta,
 }: {
   task: Task;
+  editable: boolean;
   onToggle: () => void;
   onMeta: (meta: Record<string, string>) => void;
 }) {
   return (
     <div className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
       <label className="flex items-start gap-3">
-        <Checkbox checked={task.done} onCheckedChange={() => onToggle()} className="mt-0.5" />
+        <Checkbox
+          checked={task.done}
+          disabled={!editable}
+          onCheckedChange={() => onToggle()}
+          className="mt-0.5"
+        />
         <span className={cn("text-sm leading-relaxed", task.done && "text-muted-foreground line-through")}>
           {task.title}
         </span>
@@ -346,6 +429,7 @@ function TaskRow({
               type="date"
               className="mt-1"
               value={task.meta?.date ?? ""}
+              disabled={!editable}
               onChange={(e) => onMeta({ date: e.target.value })}
             />
           </div>
@@ -357,6 +441,7 @@ function TaskRow({
               id="psg-local"
               className="mt-1"
               value={task.meta?.local ?? ""}
+              disabled={!editable}
               onChange={(e) => onMeta({ local: e.target.value })}
             />
           </div>
@@ -372,6 +457,7 @@ function TaskRow({
               id="cardio-ex"
               className="mt-1"
               value={task.meta?.exams ?? ""}
+              disabled={!editable}
               onChange={(e) => onMeta({ exams: e.target.value })}
             />
           </div>

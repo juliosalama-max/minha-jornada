@@ -40,8 +40,12 @@ function PendenciasPage() {
   const consults = useJournal((s) => s.consults);
   const nutrition = useJournal((s) => s.nutrition);
   const responses = useJournal((s) => s.journeyResponses);
+  const journeyMeta = useJournal((s) => s.journeyMeta);
   const toggleTask = useJournal((s) => s.toggleTask);
   const today = new Date();
+  const closed =
+    journeyMeta.status === "completed" || journeyMeta.status === "archived";
+  const patientCanUpdate = role === "patient" && !closed;
 
   const visibleTasks =
     role === "patient"
@@ -92,7 +96,9 @@ function PendenciasPage() {
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           {role === "doctor"
             ? "Ações da última versão publicada desta Jornada."
-            : "Veja o que ainda precisa ser organizado ou realizado ao longo da sua Jornada."}
+            : closed
+              ? "Consulta em modo histórico. Este ciclo não aceita novas alterações."
+              : "Veja o que ainda precisa ser organizado ou realizado ao longo da sua Jornada."}
         </p>
       </header>
 
@@ -108,7 +114,7 @@ function PendenciasPage() {
                 key={task.id}
                 task={task}
                 progress={actionProgressFor(progress, "task", task.id)}
-                patient={role === "patient" && task.responsible === "patient"}
+                patient={patientCanUpdate && task.responsible === "patient"}
                 onStatus={(status) =>
                   void updateProgress("task", task.id, status)
                 }
@@ -126,7 +132,7 @@ function PendenciasPage() {
                 key={exam.id}
                 exam={exam}
                 progress={actionProgressFor(progress, "exam", exam.id)}
-                patient={role === "patient"}
+                patient={patientCanUpdate}
                 onUpdate={(status, scheduledDate) =>
                   updateProgress("exam", exam.id, status, { scheduledDate })
                 }
@@ -183,6 +189,7 @@ function PendenciasPage() {
       ) : (
         <LegacyPending
           role={role}
+          patientCanUpdate={patientCanUpdate}
           openTasks={legacyOpenTasks}
           examTasks={legacyExamTasks}
           completedTasks={legacyCompletedTasks}
@@ -209,7 +216,7 @@ function PendenciasPage() {
                   {module.instructions}
                 </p>
               )}
-              {role === "patient" && (
+              {patientCanUpdate && (
                 <Button asChild size="sm" className="mt-3">
                   <Link to="/hoje">Responder</Link>
                 </Button>
@@ -388,6 +395,7 @@ function VersionedExamCard({
 
 function LegacyPending({
   role,
+  patientCanUpdate,
   openTasks,
   examTasks,
   completedTasks,
@@ -396,6 +404,7 @@ function LegacyPending({
   onToggle,
 }: {
   role: "patient" | "doctor" | null;
+  patientCanUpdate: boolean;
   openTasks: Task[];
   examTasks: Task[];
   completedTasks: Task[];
@@ -410,7 +419,7 @@ function LegacyPending({
           <LegacyTaskCard
             key={task.id}
             task={task}
-            canComplete={role === "patient"}
+            canComplete={patientCanUpdate}
             onComplete={() => onToggle(task.id)}
           />
         ))}
@@ -421,7 +430,7 @@ function LegacyPending({
           <LegacyTaskCard
             key={task.id}
             task={task}
-            canComplete={role === "patient"}
+            canComplete={patientCanUpdate}
             onComplete={() => onToggle(task.id)}
           />
         ))}

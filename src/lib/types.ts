@@ -324,14 +324,26 @@ export type JournalSnapshot = {
 
 export type Role = "patient" | "doctor";
 
+export type JourneyCycleSummary = {
+  id: string;
+  title: string;
+  status: JourneyStatus;
+  currentVersion: number;
+  startDate: string;
+  publishedAt: string | null;
+  updatedAt: string;
+};
+
 export type PatientSummary = {
   id: string;
+  journeyId: string | null;
   name: string;
   inviteCode: string;
   onboarded: boolean;
   pending: boolean;
   journeyStatus?: JourneyStatus;
   currentVersion?: number;
+  journeyCount: number;
 };
 
 export type DoctorAlert = {
