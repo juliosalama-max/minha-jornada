@@ -367,39 +367,6 @@ function makeInviteCode() {
   return [...bytes].map((b) => alphabet[b % alphabet.length]).join("");
 }
 
-async function createPatientJourney(sql: Sql, userId: string, name: string) {
-  const seed = emptySnapshot();
-  for (let i = 0; i < 8; i++) {
-    const id = crypto.randomUUID();
-    const invite = makeInviteCode();
-    try {
-      await sql`
-        insert into journeys (
-          id, patient_user_id, invite_code, onboarded, name,
-          first_consult_date, injection_weekday, dose, consults, nutrition, tasks, plan,
-          journey_status, draft_plan, published_plan, current_version
-        ) values (
-          ${id}, ${userId}, ${invite}, false, ${name},
-          '', null, '',
-          ${JSON.stringify(seed.consults)},
-          ${JSON.stringify(seed.nutrition)},
-          ${JSON.stringify(seed.tasks)},
-          ${JSON.stringify(seed.plan)},
-          'draft',
-          ${JSON.stringify(seed.journeyPlan)},
-          '{}',
-          0
-        )
-      `;
-      const rows = await sql<JourneyRow>`select * from journeys where id = ${id}`;
-      return rows[0]!;
-    } catch {
-      /* unique invite collision — retry */
-    }
-  }
-  throw new Error("Não foi possível criar o código de acompanhamento.");
-}
-
 type ProfileRow = {
   user_id: string;
   role: Role;
@@ -913,27 +880,47 @@ export const chooseRole = createServerFn({ method: "POST" })
   });
 
 async function claimJourney(sql: Sql, userId: string, code: string, displayName?: string) {
-  const existing = await patientJourney(sql, userId);
-  if (existing) throw new Error("Você já tem uma jornada nesta conta.");
+  const existingActive = await activePatientJourney(sql, userId);
+  if (existingActive) {
+    throw new Error("Você já possui uma Jornada ativa nesta conta.");
+  }
+
   const rows = await sql<JourneyRow>`
     select * from journeys where invite_code = ${code}
   `;
   const journey = rows[0];
   if (!journey) throw new Error("Código não encontrado.");
-  if (journey.patient_user_id && journey.patient_user_id !== userId) {
-    throw new Error("Este código já foi usado por outro paciente.");
-  }
   if (journey.journey_status === "draft" || journey.current_version < 1) {
     throw new Error("A Jornada ainda não foi publicada pela equipe.");
   }
-  const name = journey.name || displayName || "";
+
+  const patientRows = await sql<PatientRow>`
+    select * from patients where id = ${journey.patient_id}
+  `;
+  const patient = patientRows[0];
+  if (!patient) throw new Error("Paciente não encontrado para esta Jornada.");
+  if (patient.patient_user_id && patient.patient_user_id !== userId) {
+    throw new Error("Este código já foi usado por outro paciente.");
+  }
+
+  const name = patient.name || journey.name || displayName || "";
+
+  await sql`
+    update patients
+    set patient_user_id = ${userId},
+        name = ${name},
+        updated_at = now()
+    where id = ${patient.id}
+  `;
+
   await sql`
     update journeys
     set patient_user_id = ${userId},
         name = ${name},
         updated_at = now()
-    where id = ${journey.id}
+    where patient_id = ${patient.id}
   `;
+
   if (name) {
     await sql`update profiles set display_name = ${name} where user_id = ${userId}`;
   }
@@ -969,35 +956,52 @@ export const createDoctorPlan = createServerFn({ method: "POST" })
           ],
         }
       : seed.journeyPlan;
-    for (let i = 0; i < 8; i++) {
-      const id = crypto.randomUUID();
-      const invite = makeInviteCode();
-      try {
-        await sql`
-          insert into journeys (
-            id, patient_user_id, doctor_user_id, invite_code, onboarded, name,
-            first_consult_date, injection_weekday, dose, consults, nutrition, tasks, plan,
-            journey_status, draft_plan, published_plan, current_version, plan_updated_at
-          ) values (
-            ${id}, null, ${context.userId}, ${invite}, false, ${name},
-            ${first}, null, '',
-            ${JSON.stringify(seed.consults)},
-            ${JSON.stringify(seed.nutrition)},
-            ${JSON.stringify(seed.tasks)},
-            ${JSON.stringify(seed.plan)},
-            'draft',
-            ${JSON.stringify(initialJourneyPlan)},
-            '{}',
-            0,
-            now()
-          )
-        `;
-        return loadBootstrap(sql, context.userId, id);
-      } catch {
-        /* invite collision */
-      }
+    const patientId = crypto.randomUUID();
+    const journeyId = crypto.randomUUID();
+    const invite = makeInviteCode();
+
+    await sql`
+      insert into patients (
+        id,
+        doctor_user_id,
+        patient_user_id,
+        name,
+        updated_at
+      ) values (
+        ${patientId},
+        ${context.userId},
+        null,
+        ${name},
+        now()
+      )
+    `;
+
+    try {
+      await sql`
+        insert into journeys (
+          id, patient_id, patient_user_id, doctor_user_id, invite_code, onboarded, name,
+          first_consult_date, injection_weekday, dose, consults, nutrition, tasks, plan,
+          journey_status, draft_plan, published_plan, current_version, plan_updated_at
+        ) values (
+          ${journeyId}, ${patientId}, null, ${context.userId}, ${invite}, false, ${name},
+          ${first}, null, '',
+          ${JSON.stringify(seed.consults)},
+          ${JSON.stringify(seed.nutrition)},
+          ${JSON.stringify(seed.tasks)},
+          ${JSON.stringify(seed.plan)},
+          'draft',
+          ${JSON.stringify(initialJourneyPlan)},
+          '{}',
+          0,
+          now()
+        )
+      `;
+    } catch (error) {
+      await sql`delete from patients where id = ${patientId}`;
+      throw error;
     }
-    throw new Error("Não foi possível gerar o código do plano.");
+
+    return loadBootstrap(sql, context.userId, journeyId);
   });
 
 export const claimPlanByCode = createServerFn({ method: "POST" })
@@ -1034,9 +1038,15 @@ export const linkPatientByCode = createServerFn({ method: "POST" })
       throw new Error("Esta jornada já está vinculada a outra profissional.");
     }
     await sql`
+      update patients
+      set doctor_user_id = ${context.userId},
+          updated_at = now()
+      where id = ${journey.patient_id}
+    `;
+    await sql`
       update journeys
       set doctor_user_id = ${context.userId}, updated_at = now()
-      where id = ${journey.id}
+      where patient_id = ${journey.patient_id}
     `;
     return loadBootstrap(sql, context.userId, journey.id);
   });
@@ -1048,6 +1058,12 @@ export const saveOnboarding = createServerFn({ method: "POST" })
     const sql = await getSql();
     const journey = await resolvePatientJourney(sql, context.userId);
     const name = (data.profile.name ?? journey.name).trim();
+    await sql`
+      update patients
+      set name = ${name},
+          updated_at = now()
+      where id = ${journey.patient_id}
+    `;
     await sql`
       update journeys
       set onboarded = true,
@@ -1074,9 +1090,14 @@ export const saveProfile = createServerFn({ method: "POST" })
       const journey = await resolvePatientJourney(sql, context.userId);
       const name = data.profile.name.trim();
       await sql`
+        update patients
+        set name = ${name}, updated_at = now()
+        where id = ${journey.patient_id}
+      `;
+      await sql`
         update journeys
         set name = ${name}, updated_at = now()
-        where id = ${journey.id}
+        where patient_id = ${journey.patient_id}
       `;
       await sql`
         update profiles set display_name = ${name}
