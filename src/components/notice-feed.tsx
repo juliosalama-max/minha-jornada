@@ -21,11 +21,10 @@ export function NoticeFeed() {
       <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
         <h2 className="flex items-center gap-2 font-display text-lg font-semibold">
           <Bell className="size-4 text-primary" />
-          Registros dos pacientes
+          Atividade recente
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Quando o paciente preencher o app, o aviso aparece aqui com o nome e o
-          que foi feito.
+          Aqui aparecem registros e ações recentes do paciente. Alertas configurados ficam em uma área separada.
         </p>
       </section>
     );
@@ -36,7 +35,7 @@ export function NoticeFeed() {
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 font-display text-lg font-semibold">
           <Bell className="size-4 text-primary" />
-          Registros dos pacientes
+          Atividade recente
           {unread > 0 && (
             <span className="rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
               {unread}
