@@ -43,6 +43,70 @@ create table if not exists journey_versions (
   unique (journey_id, version)
 );
 
+-- Rollout compatibility: while a new deployment is building, the previous
+-- application version may still insert journeys without V2 draft/version
+-- fields. Those legacy-shaped inserts must keep their old "immediately
+-- available" semantics instead of becoming invisible V2 drafts.
+create or replace function prepare_legacy_journey_v2_fields()
+returns trigger
+language plpgsql
+as $
+begin
+  if new.current_version = 0
+     and new.draft_plan = '{}'
+     and new.published_plan = '{}' then
+    new.draft_plan := new.plan;
+    new.published_plan := new.plan;
+    new.journey_status := 'published';
+    new.current_version := 1;
+    new.published_at := coalesce(new.published_at, new.updated_at, now());
+    new.plan_updated_at := coalesce(new.plan_updated_at, new.updated_at, now());
+  end if;
+  return new;
+end;
+$;
+
+drop trigger if exists journeys_legacy_v2_prepare on journeys;
+
+create trigger journeys_legacy_v2_prepare
+before insert on journeys
+for each row
+execute function prepare_legacy_journey_v2_fields();
+
+create or replace function record_legacy_journey_initial_version()
+returns trigger
+language plpgsql
+as $
+begin
+  if new.current_version >= 1 then
+    insert into journey_versions (
+      id,
+      journey_id,
+      version,
+      plan,
+      published_by_user_id,
+      published_at
+    ) values (
+      'compat-' || new.id || '-' || new.current_version,
+      new.id,
+      new.current_version,
+      new.published_plan,
+      coalesce(new.doctor_user_id, 'migration'),
+      coalesce(new.published_at, new.updated_at, now())
+    )
+    on conflict (journey_id, version) do nothing;
+  end if;
+  return new;
+end;
+$;
+
+drop trigger if exists journeys_legacy_initial_version on journeys;
+
+create trigger journeys_legacy_initial_version
+after insert on journeys
+for each row
+execute function record_legacy_journey_initial_version();
+
 insert into journey_versions (
   id,
   journey_id,
