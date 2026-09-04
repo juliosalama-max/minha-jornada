@@ -11,6 +11,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { AlertFeed } from "@/components/alert-feed";
+import { DoctorPreConsultSummary } from "@/components/doctor-pre-consult-summary";
 import { NoticeFeed } from "@/components/notice-feed";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -349,6 +350,7 @@ function DoctorHome() {
         />
       </section>
 
+      <DoctorPreConsultSummary />
       <AlertFeed journeyOnly />
       <NoticeFeed />
     </div>
