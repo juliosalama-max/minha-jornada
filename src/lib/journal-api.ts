@@ -3,6 +3,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql, type Sql } from "@/lib/db";
 import type {
   DayLog,
+  DoctorAlert,
   DoctorNotice,
   JournalSnapshot,
   JourneyActionProgress,
@@ -28,6 +29,7 @@ import {
   normalizeJourneyPlan,
   withLegacyPlan,
 } from "@/lib/journey-plan";
+import { matchingAlertRules } from "@/lib/journey-alerts";
 import { moduleIsDue, responseMatchesPeriod } from "@/lib/journey-schedule";
 
 type JourneyRow = {
@@ -429,6 +431,99 @@ async function loadNotices(sql: Sql, doctorUserId: string): Promise<DoctorNotice
   }
 }
 
+async function loadAlerts(sql: Sql, doctorUserId: string): Promise<DoctorAlert[]> {
+  try {
+    const rows = await sql<{
+      id: string;
+      journey_id: string;
+      patient_name: string;
+      module_title: string;
+      title: string;
+      severity: "attention" | "important";
+      occurred_on: string;
+      created_at: string;
+      read_at: string | null;
+    }>`
+      select
+        id,
+        journey_id,
+        patient_name,
+        module_title,
+        title,
+        severity,
+        occurred_on::text,
+        created_at::text,
+        read_at::text
+      from doctor_alerts
+      where doctor_user_id = ${doctorUserId}
+      order by
+        case when read_at is null then 0 else 1 end,
+        case when severity = 'important' then 0 else 1 end,
+        created_at desc
+      limit 80
+    `;
+    return rows.map((row) => ({
+      id: row.id,
+      journeyId: row.journey_id,
+      patientName: row.patient_name,
+      moduleTitle: row.module_title,
+      title: row.title,
+      severity: row.severity,
+      occurredOn: row.occurred_on,
+      createdAt: row.created_at,
+      read: Boolean(row.read_at),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+async function recordConfiguredAlerts(
+  sql: Sql,
+  journey: JourneyRow,
+  module: JourneyModule,
+  responseId: string,
+  occurredOn: string,
+  answers: Record<string, JourneyAnswerValue>,
+) {
+  if (!journey.doctor_user_id) return;
+  const matches = matchingAlertRules(module, answers);
+  for (const rule of matches) {
+    try {
+      await sql`
+        insert into doctor_alerts (
+          id,
+          doctor_user_id,
+          journey_id,
+          patient_name,
+          module_id,
+          module_title,
+          rule_id,
+          title,
+          severity,
+          source_response_id,
+          occurred_on
+        ) values (
+          ${crypto.randomUUID()},
+          ${journey.doctor_user_id},
+          ${journey.id},
+          ${journey.name || "Paciente"},
+          ${module.id},
+          ${module.title},
+          ${rule.id},
+          ${rule.title},
+          ${rule.severity},
+          ${responseId},
+          ${occurredOn}
+        )
+        on conflict (journey_id, rule_id, source_response_id) do nothing
+      `;
+    } catch {
+      /* table may not exist until migration runs */
+    }
+  }
+}
+
 async function notifyDoctor(sql: Sql, journey: JourneyRow, summary: string) {
   if (!journey.doctor_user_id) return;
   const text = summary.trim();
@@ -468,6 +563,7 @@ export type Bootstrap =
       inviteCode: string | null;
       patientName: string | null;
       notices: DoctorNotice[];
+      alerts: DoctorAlert[];
     };
 
 async function loadBootstrap(
@@ -523,6 +619,7 @@ async function loadBootstrap(
     inviteCode: active?.invite_code ?? null,
     patientName: active?.name ?? null,
     notices: await loadNotices(sql, userId),
+    alerts: await loadAlerts(sql, userId),
   };
 }
 
@@ -532,6 +629,44 @@ export const getBootstrap = createServerFn({ method: "POST" })
   .handler(async ({ context, data }): Promise<Bootstrap> => {
     const sql = await getSql();
     return loadBootstrap(sql, context.userId, data.journeyId);
+  });
+
+export const listDoctorAlerts = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }): Promise<DoctorAlert[]> => {
+    const sql = await getSql();
+    const profile = await getProfile(sql, context.userId);
+    if (!profile || profile.role !== "doctor") return [];
+    return loadAlerts(sql, context.userId);
+  });
+
+export const markDoctorAlertsRead = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((data: { ids?: string[] } | undefined) => data ?? {})
+  .handler(async ({ context, data }): Promise<DoctorAlert[]> => {
+    const sql = await getSql();
+    const profile = await getProfile(sql, context.userId);
+    if (!profile || profile.role !== "doctor") return [];
+
+    if (data.ids?.length) {
+      for (const id of data.ids) {
+        await sql`
+          update doctor_alerts
+          set read_at = now()
+          where id = ${id}
+            and doctor_user_id = ${context.userId}
+            and read_at is null
+        `;
+      }
+    } else {
+      await sql`
+        update doctor_alerts
+        set read_at = now()
+        where doctor_user_id = ${context.userId}
+          and read_at is null
+      `;
+    }
+    return loadAlerts(sql, context.userId);
   });
 
 export const listDoctorNotices = createServerFn({ method: "POST" })
@@ -1060,11 +1195,20 @@ export const saveJourneyResponse = createServerFn({ method: "POST" })
           where id = ${duplicate.id}
         `;
         const row = rows[0]!;
+        const savedAnswers = parseJson<Record<string, JourneyAnswerValue>>(row.answers, {});
+        await recordConfiguredAlerts(
+          sql,
+          journey,
+          module,
+          row.id,
+          row.occurred_on,
+          savedAnswers,
+        );
         return {
           id: row.id,
           moduleId: row.module_id,
           occurredOn: row.occurred_on,
-          answers: parseJson<Record<string, JourneyAnswerValue>>(row.answers, {}),
+          answers: savedAnswers,
           createdAt: row.created_at,
           updatedAt: row.updated_at,
         };
@@ -1105,11 +1249,20 @@ export const saveJourneyResponse = createServerFn({ method: "POST" })
       where id = ${id}
     `;
     const row = rows[0]!;
+    const savedAnswers = parseJson<Record<string, JourneyAnswerValue>>(row.answers, {});
+    await recordConfiguredAlerts(
+      sql,
+      journey,
+      module,
+      row.id,
+      row.occurred_on,
+      savedAnswers,
+    );
     return {
       id: row.id,
       moduleId: row.module_id,
       occurredOn: row.occurred_on,
-      answers: parseJson<Record<string, JourneyAnswerValue>>(row.answers, {}),
+      answers: savedAnswers,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
