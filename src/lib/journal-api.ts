@@ -356,11 +356,70 @@ async function createPatientJourney(sql: Sql, userId: string, name: string) {
   throw new Error("Não foi possível criar o código de acompanhamento.");
 }
 
-async function getProfile(sql: Sql, userId: string) {
-  const rows = await sql<{ user_id: string; role: Role; display_name: string }>`
+type ProfileRow = {
+  user_id: string;
+  role: Role;
+  display_name: string;
+};
+
+async function getProfile(sql: Sql, userId: string): Promise<ProfileRow | null> {
+  const rows = await sql<ProfileRow>`
     select user_id, role, display_name from profiles where user_id = ${userId}
   `;
   return rows[0] ?? null;
+}
+
+async function doctorAuthorizationActive(sql: Sql, userId: string): Promise<boolean> {
+  try {
+    const rows = await sql<{ active: boolean }>`
+      select active
+      from doctor_authorizations
+      where user_id = ${userId}
+      limit 1
+    `;
+    return rows[0]?.active === true;
+  } catch {
+    return false;
+  }
+}
+
+async function provisionAuthorizedDoctorProfile(
+  sql: Sql,
+  userId: string,
+): Promise<ProfileRow | null> {
+  if (!(await doctorAuthorizationActive(sql, userId))) return null;
+
+  const existing = await getProfile(sql, userId);
+  if (existing) return existing.role === "doctor" ? existing : null;
+
+  const users = await sql<{ name: string }>`
+    select name
+    from "user"
+    where id = ${userId}
+    limit 1
+  `;
+  const displayName = users[0]?.name?.trim() || "Profissional";
+
+  await sql`
+    insert into profiles (user_id, role, display_name)
+    values (${userId}, 'doctor', ${displayName})
+    on conflict (user_id) do nothing
+  `;
+
+  const profile = await getProfile(sql, userId);
+  return profile?.role === "doctor" ? profile : null;
+}
+
+async function requireAuthorizedDoctor(
+  sql: Sql,
+  userId: string,
+): Promise<ProfileRow> {
+  const profile = await getProfile(sql, userId);
+  const authorized = await doctorAuthorizationActive(sql, userId);
+  if (!profile || profile.role !== "doctor" || !authorized) {
+    throw new Error("Acesso profissional não autorizado.");
+  }
+  return profile;
 }
 
 async function patientJourney(sql: Sql, userId: string) {
@@ -381,10 +440,7 @@ async function resolvePatientJourney(sql: Sql, userId: string) {
 }
 
 async function resolveDoctorJourney(sql: Sql, userId: string, journeyId?: string | null) {
-  const profile = await getProfile(sql, userId);
-  if (!profile || profile.role !== "doctor") {
-    throw new Error("Apenas a equipe médica pode alterar o plano.");
-  }
+  await requireAuthorizedDoctor(sql, userId);
   if (!journeyId) throw new Error("Selecione um paciente");
   const rows = await sql<JourneyRow>`
     select * from journeys
@@ -571,8 +627,15 @@ async function loadBootstrap(
   userId: string,
   requestedJourneyId?: string | null,
 ): Promise<Bootstrap> {
-  const profile = await getProfile(sql, userId);
+  let profile = await getProfile(sql, userId);
+  if (!profile) {
+    profile = await provisionAuthorizedDoctorProfile(sql, userId);
+  }
   if (!profile) return { kind: "needs-role" };
+
+  if (profile.role === "doctor" && !(await doctorAuthorizationActive(sql, userId))) {
+    throw new Error("Acesso profissional revogado ou não autorizado.");
+  }
 
   if (profile.role === "patient") {
     const journey = await patientJourney(sql, userId);
@@ -635,8 +698,11 @@ export const listDoctorAlerts = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .handler(async ({ context }): Promise<DoctorAlert[]> => {
     const sql = await getSql();
-    const profile = await getProfile(sql, context.userId);
-    if (!profile || profile.role !== "doctor") return [];
+    try {
+      await requireAuthorizedDoctor(sql, context.userId);
+    } catch {
+      return [];
+    }
     return loadAlerts(sql, context.userId);
   });
 
@@ -645,8 +711,11 @@ export const markDoctorAlertsRead = createServerFn({ method: "POST" })
   .validator((data: { ids?: string[] } | undefined) => data ?? {})
   .handler(async ({ context, data }): Promise<DoctorAlert[]> => {
     const sql = await getSql();
-    const profile = await getProfile(sql, context.userId);
-    if (!profile || profile.role !== "doctor") return [];
+    try {
+      await requireAuthorizedDoctor(sql, context.userId);
+    } catch {
+      return [];
+    }
 
     if (data.ids?.length) {
       for (const id of data.ids) {
@@ -673,8 +742,11 @@ export const listDoctorNotices = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .handler(async ({ context }): Promise<DoctorNotice[]> => {
     const sql = await getSql();
-    const profile = await getProfile(sql, context.userId);
-    if (!profile || profile.role !== "doctor") return [];
+    try {
+      await requireAuthorizedDoctor(sql, context.userId);
+    } catch {
+      return [];
+    }
     return loadNotices(sql, context.userId);
   });
 
@@ -683,8 +755,11 @@ export const markNoticesRead = createServerFn({ method: "POST" })
   .validator((data: { ids?: string[] } | undefined) => data ?? {})
   .handler(async ({ context, data }): Promise<DoctorNotice[]> => {
     const sql = await getSql();
-    const profile = await getProfile(sql, context.userId);
-    if (!profile || profile.role !== "doctor") return [];
+    try {
+      await requireAuthorizedDoctor(sql, context.userId);
+    } catch {
+      return [];
+    }
     if (data.ids?.length) {
       for (const id of data.ids) {
         await sql`
@@ -716,9 +791,7 @@ export const chooseRole = createServerFn({ method: "POST" })
     const sql = await getSql();
     const existing = await getProfile(sql, context.userId);
     if (data.role === "doctor") {
-      if (!existing || existing.role !== "doctor") {
-        throw new Error("Contas profissionais são liberadas apenas pela administração.");
-      }
+      await requireAuthorizedDoctor(sql, context.userId);
       return loadBootstrap(sql, context.userId, null);
     }
     if (!existing) {
@@ -771,10 +844,7 @@ export const createDoctorPlan = createServerFn({ method: "POST" })
   .validator((data: { patientName: string; firstConsultDate?: string }) => data)
   .handler(async ({ context, data }): Promise<Bootstrap> => {
     const sql = await getSql();
-    const profile = await getProfile(sql, context.userId);
-    if (!profile || profile.role !== "doctor") {
-      throw new Error("Apenas a equipe médica pode criar um plano.");
-    }
+    await requireAuthorizedDoctor(sql, context.userId);
     const name = data.patientName.trim();
     if (!name) throw new Error("Informe o nome do paciente.");
     const seed = emptySnapshot();
@@ -852,10 +922,7 @@ export const linkPatientByCode = createServerFn({ method: "POST" })
   }))
   .handler(async ({ context, data }): Promise<Bootstrap> => {
     const sql = await getSql();
-    const profile = await getProfile(sql, context.userId);
-    if (!profile || profile.role !== "doctor") {
-      throw new Error("Apenas a equipe médica pode vincular pacientes.");
-    }
+    await requireAuthorizedDoctor(sql, context.userId);
     if (data.code.length < 6) throw new Error("Código incompleto.");
     const rows = await sql<JourneyRow>`
       select * from journeys where invite_code = ${data.code}
