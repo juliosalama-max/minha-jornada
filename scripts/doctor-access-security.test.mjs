@@ -14,7 +14,7 @@ test("doctor profiles are guarded by an administrative authorization table", () 
   assert.match(sql, /select user_id[\s\S]*from profiles[\s\S]*where role = 'doctor'/i);
   assert.match(sql, /profiles_doctor_authorization_guard/i);
   assert.match(sql, /before insert or update of role on profiles/i);
-  assert.match(sql, /authz\\.active = true/i);
+  assert.match(sql, /authz\.active = true/i);
 });
 
 test("public role setup remains patient-only", () => {
