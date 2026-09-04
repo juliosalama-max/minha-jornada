@@ -23,9 +23,9 @@ as $fn$
 begin
   if new.role = 'doctor' and not exists (
     select 1
-    from doctor_authorizations authorization
-    where authorization.user_id = new.user_id
-      and authorization.active = true
+    from doctor_authorizations authz
+    where authz.user_id = new.user_id
+      and authz.active = true
   ) then
     raise exception 'doctor profile requires active administrative authorization';
   end if;
