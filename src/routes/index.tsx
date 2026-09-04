@@ -23,6 +23,7 @@ import { formatLong } from "@/lib/calendar";
 import { EMERGENCY_COPY } from "@/lib/constants";
 import { useJournal } from "@/lib/journal-store";
 import type { JourneyPlanV2 } from "@/lib/types";
+import type { JourneyPlanV2 } from "@/lib/types";
 
 export const Route = createFileRoute("/")({ component: Home });
 
