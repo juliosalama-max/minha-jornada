@@ -16,9 +16,33 @@ export const Route = createFileRoute("/hoje")({ component: HojePage });
 function HojePage() {
   const role = useJournal((s) => s.role);
   const journeyPlan = useJournal((s) => s.journeyPlan);
+  const journeyMeta = useJournal((s) => s.journeyMeta);
   const responses = useJournal((s) => s.journeyResponses);
 
   if (role === "doctor") return <Navigate to="/mes" />;
+
+  if (journeyMeta.status === "completed" || journeyMeta.status === "archived") {
+    return (
+      <div className="space-y-4">
+        <header>
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">
+            {journeyPlan.title || "Minha Jornada"}
+          </p>
+          <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">
+            Ciclo encerrado
+          </h1>
+        </header>
+        <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
+          <p className="font-medium">
+            Esta Jornada está {journeyMeta.status === "completed" ? "concluída" : "arquivada"}.
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            Os registros anteriores continuam disponíveis em Evolução, mas novos registros não são aceitos neste ciclo.
+          </p>
+        </section>
+      </div>
+    );
+  }
 
   const date = new Date();
   const key = toKey(date);
