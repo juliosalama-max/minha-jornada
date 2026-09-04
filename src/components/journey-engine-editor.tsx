@@ -15,6 +15,7 @@ import {
 } from "@/lib/journey-templates-v2";
 import { useJournal } from "@/lib/journal-store";
 import type {
+  JourneyAlertRule,
   JourneyFrequencyKind,
   JourneyModule,
   JourneyModuleType,
@@ -487,12 +488,205 @@ function ModuleEditor({
           onRemove={() =>
             onChange({
               questions: module.questions.filter((item) => item.id !== question.id),
+              alerts: (module.alerts ?? []).filter(
+                (rule) => rule.questionId !== question.id,
+              ),
             })
           }
         />
       ))}
+
+      <div className="border-t border-border/60 pt-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">Alertas para a médica</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Opcional. Só gera alerta quando uma regra publicada for atendida.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={module.questions.length === 0}
+            onClick={() => {
+              const first = module.questions[0];
+              if (!first) return;
+              const rule: JourneyAlertRule = {
+                id: crypto.randomUUID(),
+                questionId: first.id,
+                operator: "equals",
+                value: defaultRuleValue(first),
+                title: "",
+                severity: "attention",
+              };
+              onChange({ alerts: [...(module.alerts ?? []), rule] });
+            }}
+          >
+            <Plus className="size-4" />
+            Alerta
+          </Button>
+        </div>
+
+        {(module.alerts ?? []).length === 0 ? (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Nenhum alerta configurado neste módulo.
+          </p>
+        ) : (
+          <div className="mt-3 space-y-3">
+            {(module.alerts ?? []).map((rule) => (
+              <AlertRuleEditor
+                key={rule.id}
+                rule={rule}
+                questions={module.questions}
+                onChange={(patch) =>
+                  onChange({
+                    alerts: (module.alerts ?? []).map((item) =>
+                      item.id === rule.id ? { ...item, ...patch } : item,
+                    ),
+                  })
+                }
+                onRemove={() =>
+                  onChange({
+                    alerts: (module.alerts ?? []).filter(
+                      (item) => item.id !== rule.id,
+                    ),
+                  })
+                }
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
+}
+
+function AlertRuleEditor({
+  rule,
+  questions,
+  onChange,
+  onRemove,
+}: {
+  rule: JourneyAlertRule;
+  questions: JourneyQuestion[];
+  onChange: (patch: Partial<JourneyAlertRule>) => void;
+  onRemove: () => void;
+}) {
+  const question = questions.find((item) => item.id === rule.questionId);
+  if (!question) return null;
+
+  const numeric =
+    question.type === "scale" ||
+    question.type === "number" ||
+    question.type === "duration";
+
+  return (
+    <div className="space-y-3 rounded-lg bg-secondary/40 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary">
+          Regra de alerta
+        </p>
+        <button type="button" className="text-xs text-destructive" onClick={onRemove}>
+          Remover
+        </button>
+      </div>
+
+      <Field label="Pergunta observada">
+        <select
+          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+          value={rule.questionId}
+          onChange={(e) => {
+            const nextQuestion = questions.find((item) => item.id === e.target.value);
+            onChange({
+              questionId: e.target.value,
+              operator: "equals",
+              value: nextQuestion ? defaultRuleValue(nextQuestion) : "",
+            });
+          }}
+        >
+          {questions.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.label || "Pergunta sem título"}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Field label="Condição">
+          <select
+            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            value={rule.operator}
+            onChange={(e) =>
+              onChange({
+                operator: e.target.value as JourneyAlertRule["operator"],
+              })
+            }
+          >
+            <option value="equals">é igual a</option>
+            <option value="not_equals">é diferente de</option>
+            {(question.type === "multiple_choice" ||
+              question.type === "short_text" ||
+              question.type === "long_text") && (
+              <option value="includes">contém</option>
+            )}
+            {numeric && <option value="gte">é maior ou igual a</option>}
+            {numeric && <option value="lte">é menor ou igual a</option>}
+          </select>
+        </Field>
+        <Field label="Valor">
+          <ConditionValueEditor
+            control={question}
+            value={rule.value}
+            onChange={(value) => onChange({ value })}
+          />
+        </Field>
+      </div>
+
+      <Field label="Mensagem do alerta">
+        <Input
+          value={rule.title}
+          placeholder="Ex.: Revisar resposta deste módulo"
+          onChange={(e) => onChange({ title: e.target.value })}
+        />
+      </Field>
+
+      <Field label="Prioridade visual">
+        <select
+          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+          value={rule.severity}
+          onChange={(e) =>
+            onChange({
+              severity: e.target.value as JourneyAlertRule["severity"],
+            })
+          }
+        >
+          <option value="attention">Atenção</option>
+          <option value="important">Importante</option>
+        </select>
+      </Field>
+    </div>
+  );
+}
+
+function defaultRuleValue(question: JourneyQuestion): string | number | boolean {
+  if (question.type === "boolean" || question.type === "event") return true;
+  if (
+    question.type === "scale" ||
+    question.type === "number" ||
+    question.type === "duration"
+  ) {
+    return question.min ?? 0;
+  }
+  if (
+    question.type === "single_choice" ||
+    question.type === "multiple_choice" ||
+    question.type === "emotion"
+  ) {
+    return question.options?.[0]?.id ?? "";
+  }
+  return "";
 }
 
 function QuestionEditor({
