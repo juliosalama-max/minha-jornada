@@ -10,6 +10,7 @@ import {
   Route as RouteIcon,
   TriangleAlert,
 } from "lucide-react";
+import { AlertFeed } from "@/components/alert-feed";
 import { NoticeFeed } from "@/components/notice-feed";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -348,6 +349,7 @@ function DoctorHome() {
         />
       </section>
 
+      <AlertFeed journeyOnly />
       <NoticeFeed />
     </div>
   );
