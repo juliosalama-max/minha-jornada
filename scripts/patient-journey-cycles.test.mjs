@@ -67,3 +67,36 @@ test("doctor list opens a journey through the patient summary", () => {
   assert.match(desk, /openPatient\(patientSummary\.journeyId\)/);
   assert.doesNotMatch(desk, /Vincular jornada já criada pelo paciente/);
 });
+
+
+test("one signed-in account maps to one patient identity", () => {
+  const sql = readFileSync(
+    join(root, "migrations/0011_patient_account_uniqueness.sql"),
+    "utf8",
+  );
+  const api = readFileSync(join(root, "src/lib/journal-api.ts"), "utf8");
+
+  assert.match(sql, /create unique index if not exists patients_account_unique/i);
+  assert.match(sql, /on patients \(patient_user_id\)/i);
+  assert.match(api, /patientRecordByUser/);
+  assert.match(api, /Esta conta já está vinculada a outro cadastro de paciente/);
+});
+
+test("patient can edit identity without an active Journey", () => {
+  const api = readFileSync(join(root, "src/lib/journal-api.ts"), "utf8");
+  const saveProfile = api.slice(api.indexOf("export const saveProfile"));
+
+  assert.match(saveProfile, /const patient = await patientRecordByUser/);
+  assert.doesNotMatch(
+    saveProfile.slice(0, saveProfile.indexOf("const journey = await resolveDoctorJourney")),
+    /resolvePatientJourney/,
+  );
+});
+
+test("legacy clinical profile fields cannot mutate a closed Journey", () => {
+  const api = readFileSync(join(root, "src/lib/journal-api.ts"), "utf8");
+  const saveProfile = api.slice(api.indexOf("export const saveProfile"));
+
+  assert.match(saveProfile, /clinicalLegacyChanged/);
+  assert.match(saveProfile, /if \(clinicalLegacyChanged\) \{\s*assertJourneyEditable\(journey\)/);
+});
