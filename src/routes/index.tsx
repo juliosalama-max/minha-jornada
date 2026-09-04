@@ -47,11 +47,13 @@ function PatientHome() {
   const first = name.trim().split(" ")[0];
   const activeModules = journeyPlan.modules.filter((module) => module.enabled);
   const legacyOnly = isLegacyGeneratedJourney(activeModules);
+  const closed =
+    journeyMeta.status === "completed" || journeyMeta.status === "archived";
 
-  const due = legacyOnly
+  const due = legacyOnly || closed
     ? []
     : dueModulesForDate(activeModules, today, responses);
-  const completed = legacyOnly
+  const completed = legacyOnly || closed
     ? []
     : completedModulesForDate(activeModules, today, responses);
   const recentResponses = responses.filter(
@@ -107,7 +109,7 @@ function PatientHome() {
         </Button>
       </section>
 
-      {!legacyOnly && (
+      {!legacyOnly && !closed && (
         <section className="grid gap-3 sm:grid-cols-3">
           <SummaryCard
             label="Para hoje"
@@ -146,18 +148,28 @@ function PatientHome() {
         </section>
       )}
 
-      <ActionCard
-        title="Hoje"
-        detail={
-          legacyOnly
-            ? "Abra seu registro diário."
-            : due.length
-              ? "Há itens previstos na sua Jornada."
-              : "Nenhum registro previsto agora."
-        }
-        to="/hoje"
-        buttonLabel={due.length || legacyOnly ? "Abrir" : "Ver hoje"}
-      />
+      {closed ? (
+        <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
+          <p className="font-display text-lg font-semibold">Ciclo encerrado</p>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            Esta Jornada está {journeyMeta.status === "completed" ? "concluída" : "arquivada"}.
+            Seus registros permanecem disponíveis em Evolução.
+          </p>
+        </section>
+      ) : (
+        <ActionCard
+          title="Hoje"
+          detail={
+            legacyOnly
+              ? "Abra seu registro diário."
+              : due.length
+                ? "Há itens previstos na sua Jornada."
+                : "Nenhum registro previsto agora."
+          }
+          to="/hoje"
+          buttonLabel={due.length || legacyOnly ? "Abrir" : "Ver hoje"}
+        />
+      )}
 
       <section className="grid gap-3 sm:grid-cols-2">
         <InfoCard
