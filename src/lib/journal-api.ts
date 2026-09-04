@@ -96,6 +96,38 @@ function journeyMeta(row: JourneyRow): JourneyMeta {
   };
 }
 
+function journeyCycleSummary(row: JourneyRow): JourneyCycleSummary {
+  const source =
+    row.journey_status === "draft" || row.journey_status === "in_review"
+      ? row.draft_plan || row.published_plan || row.plan
+      : row.published_plan || row.draft_plan || row.plan;
+  const plan = parseJourneyPlan(source, row.plan);
+  return {
+    id: row.id,
+    title: plan.title || "Jornada",
+    status: row.journey_status,
+    currentVersion: Number(row.current_version || 0),
+    startDate: plan.startDate || row.first_consult_date || "",
+    publishedAt: row.published_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function sortJourneyCycles(rows: JourneyRow[]): JourneyRow[] {
+  return [...rows].sort((a, b) => {
+    const aActive =
+      a.journey_status === "draft" ||
+      a.journey_status === "published" ||
+      a.journey_status === "in_review";
+    const bActive =
+      b.journey_status === "draft" ||
+      b.journey_status === "published" ||
+      b.journey_status === "in_review";
+    if (aActive !== bActive) return aActive ? -1 : 1;
+    return b.updated_at.localeCompare(a.updated_at);
+  });
+}
+
 function questionConditionMatches(
   condition: JourneyModule["questions"][number]["condition"],
   answers: Record<string, JourneyAnswerValue>,
@@ -657,6 +689,7 @@ export type Bootstrap =
       snapshot: JournalSnapshot | null;
       inviteCode: string | null;
       patientName: string | null;
+      journeyHistory: JourneyCycleSummary[];
       notices: DoctorNotice[];
       alerts: DoctorAlert[];
     };
@@ -690,27 +723,58 @@ async function loadBootstrap(
     };
   }
 
-  const patientRows = await sql<JourneyRow>`
-    select * from journeys
+  const patientRows = await sql<PatientRow>`
+    select *
+    from patients
     where doctor_user_id = ${userId}
-    order by name asc
+    order by name asc, created_at asc
   `;
-  const patients: PatientSummary[] = patientRows.map((r) => ({
-    id: r.id,
-    name: r.name || (r.patient_user_id ? "Paciente" : "Aguardando paciente"),
-    inviteCode: r.invite_code,
-    onboarded: Boolean(r.onboarded),
-    pending: !r.patient_user_id,
-    journeyStatus: r.journey_status,
-    currentVersion: Number(r.current_version || 0),
-  }));
+  const journeyRows = await sql<JourneyRow>`
+    select *
+    from journeys
+    where doctor_user_id = ${userId}
+    order by updated_at desc
+  `;
+
+  const patients: PatientSummary[] = patientRows.map((patient) => {
+    const cycles = sortJourneyCycles(
+      journeyRows.filter((journey) => journey.patient_id === patient.id),
+    );
+    const current = cycles[0];
+    return {
+      id: patient.id,
+      journeyId: current?.id ?? null,
+      name:
+        patient.name ||
+        current?.name ||
+        (patient.patient_user_id ? "Paciente" : "Aguardando paciente"),
+      inviteCode: current?.invite_code ?? "",
+      onboarded: Boolean(current?.onboarded),
+      pending: !patient.patient_user_id,
+      journeyStatus: current?.journey_status,
+      currentVersion: Number(current?.current_version || 0),
+      journeyCount: cycles.length,
+    };
+  });
 
   let active: JourneyRow | undefined;
   if (requestedJourneyId) {
-    active = patientRows.find((r) => r.id === requestedJourneyId);
-  } else if (requestedJourneyId === undefined && patientRows.length === 1) {
-    active = patientRows[0];
+    active = journeyRows.find((row) => row.id === requestedJourneyId);
+  } else if (requestedJourneyId === undefined && patients.length === 1) {
+    const currentId = patients[0]?.journeyId;
+    active = currentId
+      ? journeyRows.find((row) => row.id === currentId)
+      : undefined;
   }
+
+  const activePatient = active
+    ? patientRows.find((patient) => patient.id === active!.patient_id)
+    : undefined;
+  const journeyHistory = active
+    ? sortJourneyCycles(
+        journeyRows.filter((journey) => journey.patient_id === active!.patient_id),
+      ).map(journeyCycleSummary)
+    : [];
 
   return {
     kind: "doctor",
@@ -719,7 +783,8 @@ async function loadBootstrap(
     doctorName: profile.display_name,
     snapshot: active ? await loadSnapshot(sql, active, "doctor") : null,
     inviteCode: active?.invite_code ?? null,
-    patientName: active?.name ?? null,
+    patientName: activePatient?.name ?? active?.name ?? null,
+    journeyHistory,
     notices: await loadNotices(sql, userId),
     alerts: await loadAlerts(sql, userId),
   };
