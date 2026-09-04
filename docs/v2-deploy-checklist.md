@@ -168,3 +168,14 @@ A versão pode ser considerada tecnicamente pronta para merge quando:
 - houver snapshot do banco antes do deploy.
 
 O merge da V2 e o deploy em produção são etapas separadas da implementação e devem ser deliberados.
+
+
+## Preview Vercel
+
+A validação funcional final deve ser executada em um deployment Vercel gerado a partir da branch `release/v2-integration-final`, nunca no deployment da `main`.
+
+Antes de iniciar os testes:
+- confirmar no GitHub/Vercel que o deployment aponta para o SHA atual da branch de integração;
+- usar banco isolado ou PGlite temporário, nunca `DATABASE_URL` de produção;
+- não associar o domínio de produção ao preview;
+- registrar o URL de preview usado no teste funcional.
