@@ -1,11 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql, type Sql } from "@/lib/db";
-import {
-  DEFAULT_CONSULTS,
-  DEFAULT_NUTRITION,
-  DEFAULT_TASKS,
-} from "@/lib/constants";
 import type {
   DayLog,
   DoctorNotice,
@@ -192,9 +187,9 @@ function emptySnapshot(): JournalSnapshot {
       injectionWeekday: null,
       dose: "",
     },
-    consults: DEFAULT_CONSULTS.map((c) => ({ ...c })),
-    nutrition: DEFAULT_NUTRITION.map((c) => ({ ...c })),
-    tasks: DEFAULT_TASKS.map((t) => ({ ...t, meta: t.meta ? { ...t.meta } : undefined })),
+    consults: [],
+    nutrition: [],
+    tasks: [],
     days: {},
     monthNotes: {},
     plan: emptyPlan(),
@@ -649,9 +644,25 @@ export const createDoctorPlan = createServerFn({ method: "POST" })
     if (!name) throw new Error("Informe o nome do paciente.");
     const seed = emptySnapshot();
     const first = data.firstConsultDate ?? "";
-    const consults = seed.consults.map((c, i) =>
-      i === 0 && first ? { ...c, date: first } : { ...c },
-    );
+    const initialJourneyPlan: JourneyPlanV2 = first
+      ? {
+          ...seed.journeyPlan,
+          startDate: first,
+          appointments: [
+            {
+              id: crypto.randomUUID(),
+              type: "doctor",
+              professional: "",
+              date: first,
+              offsetDays: null,
+              mode: "unspecified",
+              notes: "Consulta inicial",
+              status: "scheduled",
+              visibleToPatient: true,
+            },
+          ],
+        }
+      : seed.journeyPlan;
     for (let i = 0; i < 8; i++) {
       const id = crypto.randomUUID();
       const invite = makeInviteCode();
@@ -664,12 +675,12 @@ export const createDoctorPlan = createServerFn({ method: "POST" })
           ) values (
             ${id}, null, ${context.userId}, ${invite}, false, ${name},
             ${first}, null, '',
-            ${JSON.stringify(consults)},
+            ${JSON.stringify(seed.consults)},
             ${JSON.stringify(seed.nutrition)},
             ${JSON.stringify(seed.tasks)},
             ${JSON.stringify(seed.plan)},
             'draft',
-            ${JSON.stringify(seed.journeyPlan)},
+            ${JSON.stringify(initialJourneyPlan)},
             '{}',
             0,
             now()
