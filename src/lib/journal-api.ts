@@ -789,11 +789,10 @@ export const chooseRole = createServerFn({ method: "POST" })
   }))
   .handler(async ({ context, data }): Promise<Bootstrap> => {
     const sql = await getSql();
-    const existing = await getProfile(sql, context.userId);
-    if (data.role === "doctor") {
-      await requireAuthorizedDoctor(sql, context.userId);
-      return loadBootstrap(sql, context.userId, null);
+    if (data.role !== "patient") {
+      throw new Error("O papel profissional não pode ser criado por este endpoint.");
     }
+    const existing = await getProfile(sql, context.userId);
     if (!existing) {
       await sql`
         insert into profiles (user_id, role, display_name)
@@ -802,12 +801,10 @@ export const chooseRole = createServerFn({ method: "POST" })
     } else if (existing.role !== "patient") {
       throw new Error("Esta conta não está autorizada como paciente.");
     }
-    if (data.role === "patient") {
-      if (data.inviteCode.length < 6) {
-        throw new Error("Informe o código de 6 caracteres enviado pela médica.");
-      }
-      await claimJourney(sql, context.userId, data.inviteCode, data.name);
+    if (data.inviteCode.length < 6) {
+      throw new Error("Informe o código de 6 caracteres enviado pela médica.");
     }
+    await claimJourney(sql, context.userId, data.inviteCode, data.name);
     return loadBootstrap(sql, context.userId, null);
   });
 
