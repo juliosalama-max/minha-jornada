@@ -8,6 +8,7 @@ import type {
   JournalSnapshot,
   JourneyActionProgress,
   JourneyAnswerValue,
+  JourneyCycleSummary,
   JourneyMeta,
   JourneyModule,
   JourneyModuleResponse,
@@ -34,6 +35,7 @@ import { moduleIsDue, responseMatchesPeriod } from "@/lib/journey-schedule";
 
 type JourneyRow = {
   id: string;
+  patient_id: string;
   patient_user_id: string | null;
   doctor_user_id: string | null;
   invite_code: string;
@@ -52,6 +54,16 @@ type JourneyRow = {
   current_version: number;
   published_at: string | null;
   plan_updated_at: string | null;
+  updated_at: string;
+};
+
+type PatientRow = {
+  id: string;
+  doctor_user_id: string | null;
+  patient_user_id: string | null;
+  name: string;
+  created_at: string;
+  updated_at: string;
 };
 
 function parseJson<T>(raw: string | null | undefined, fallback: T): T {
@@ -424,7 +436,32 @@ async function requireAuthorizedDoctor(
 
 async function patientJourney(sql: Sql, userId: string) {
   const rows = await sql<JourneyRow>`
-    select * from journeys where patient_user_id = ${userId}
+    select journey.*
+    from journeys journey
+    join patients patient on patient.id = journey.patient_id
+    where patient.patient_user_id = ${userId}
+      and journey.journey_status <> 'draft'
+    order by
+      case
+        when journey.journey_status in ('published', 'in_review') then 0
+        when journey.journey_status = 'completed' then 1
+        else 2
+      end,
+      journey.updated_at desc
+    limit 1
+  `;
+  return rows[0] ?? null;
+}
+
+async function activePatientJourney(sql: Sql, userId: string) {
+  const rows = await sql<JourneyRow>`
+    select journey.*
+    from journeys journey
+    join patients patient on patient.id = journey.patient_id
+    where patient.patient_user_id = ${userId}
+      and journey.journey_status in ('published', 'in_review')
+    order by journey.updated_at desc
+    limit 1
   `;
   return rows[0] ?? null;
 }
@@ -434,8 +471,10 @@ async function resolvePatientJourney(sql: Sql, userId: string) {
   if (!profile || profile.role !== "patient") {
     throw new Error("Apenas o paciente pode registrar esta informação.");
   }
-  const row = await patientJourney(sql, userId);
-  if (!row) throw new Error("Jornada não encontrada");
+  const row = await activePatientJourney(sql, userId);
+  if (!row) {
+    throw new Error("Não há uma Jornada ativa disponível para registro.");
+  }
   return row;
 }
 
