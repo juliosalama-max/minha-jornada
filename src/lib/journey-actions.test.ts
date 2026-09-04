@@ -6,13 +6,43 @@ import {
   openCareActionCount,
   resolvedAppointmentDate,
 } from "./journey-actions.ts";
-import { emptyJourneyPlan } from "./journey-plan.ts";
 import type {
   JourneyActionProgress,
   JourneyAppointment,
   JourneyExam,
+  JourneyPlanV2,
   JourneyTask,
 } from "./types.ts";
+
+function plan(patch: Partial<JourneyPlanV2> = {}): JourneyPlanV2 {
+  return {
+    schemaVersion: 2,
+    title: "",
+    startDate: "",
+    durationDays: null,
+    reviewDate: "",
+    motivation: "",
+    patientValues: "",
+    objective: "",
+    priorities: [],
+    modules: [],
+    tasks: [],
+    exams: [],
+    appointments: [],
+    legacy: {
+      motivation: "",
+      workOn: "",
+      focus: "",
+      medication: { enabled: false, hasInjection: false, symptoms: [] },
+      movement: { enabled: false, aerobic: [], strength: [] },
+      sleep: { enabled: false, mode: "general" },
+      spirituality: { enabled: false },
+      food: { enabled: false },
+      social: { enabled: false },
+    },
+    ...patch,
+  };
+}
 
 function task(id: string, visibleToPatient = true): JourneyTask {
   return {
@@ -67,17 +97,16 @@ describe("journey care actions", () => {
   });
 
   it("counts visible open tasks and exams from the published plan", () => {
-    const plan = {
-      ...emptyJourneyPlan(),
+    const currentPlan = plan({
       tasks: [task("t1"), task("hidden", false)],
       exams: [exam("e1"), exam("e2")],
-    };
+    });
     const items = [progress("exam", "e1", "completed")];
-    assert.equal(openCareActionCount(plan, items), 2);
+    assert.equal(openCareActionCount(currentPlan, items), 2);
   });
 
   it("uses an explicit appointment date when present", () => {
-    const plan = { ...emptyJourneyPlan(), startDate: "2026-09-10" };
+    const currentPlan = plan({ startDate: "2026-09-10" });
     const appointment: JourneyAppointment = {
       id: "a1",
       type: "doctor",
@@ -89,11 +118,11 @@ describe("journey care actions", () => {
       status: "scheduled",
       visibleToPatient: true,
     };
-    assert.equal(resolvedAppointmentDate(plan, appointment), "2026-10-20");
+    assert.equal(resolvedAppointmentDate(currentPlan, appointment), "2026-10-20");
   });
 
   it("resolves an appointment offset from the journey start date", () => {
-    const plan = { ...emptyJourneyPlan(), startDate: "2026-09-10" };
+    const currentPlan = plan({ startDate: "2026-09-10" });
     const appointment: JourneyAppointment = {
       id: "a2",
       type: "doctor",
@@ -105,11 +134,11 @@ describe("journey care actions", () => {
       status: "planned",
       visibleToPatient: true,
     };
-    assert.equal(resolvedAppointmentDate(plan, appointment), "2026-10-10");
+    assert.equal(resolvedAppointmentDate(currentPlan, appointment), "2026-10-10");
   });
 
   it("keeps undated appointments unresolved without a journey start", () => {
-    const plan = emptyJourneyPlan();
+    const currentPlan = plan();
     const appointment: JourneyAppointment = {
       id: "a3",
       type: "nutrition",
@@ -121,6 +150,6 @@ describe("journey care actions", () => {
       status: "planned",
       visibleToPatient: true,
     };
-    assert.equal(resolvedAppointmentDate(plan, appointment), "");
+    assert.equal(resolvedAppointmentDate(currentPlan, appointment), "");
   });
 });
