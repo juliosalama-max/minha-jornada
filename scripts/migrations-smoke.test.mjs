@@ -15,9 +15,14 @@ async function migratedDb() {
   const entries = await readdir(migrationsDir);
   for (const { name } of pendingMigrations(entries, [])) {
     const sql = await readFile(join(migrationsDir, name), "utf8");
-    await pg.transaction(async (tx) => {
-      await tx.exec(sql);
-    });
+    try {
+      await pg.transaction(async (tx) => {
+        await tx.exec(sql);
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`migration ${name} failed: ${message}`, { cause: error });
+    }
   }
 
   return pg;
