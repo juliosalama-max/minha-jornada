@@ -36,6 +36,7 @@ jobs:
           node --experimental-strip-types --test \
             src/lib/journey-schedule.test.ts \
             src/lib/journey-response-format.test.ts \
+            src/lib/journey-actions.test.ts \
             src/lib/app-data/app-data.test.ts \
             src/lib/auth/gate-identity.test.ts
 
