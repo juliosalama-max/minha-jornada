@@ -39,6 +39,7 @@ jobs:
             src/lib/journey-actions.test.ts \
             src/lib/journey-alerts.test.ts \
             src/lib/pre-consult-summary.test.ts \
+            src/lib/doctor-patient-dashboard.test.ts \
             src/lib/app-data/app-data.test.ts \
             src/lib/auth/gate-identity.test.ts
 
