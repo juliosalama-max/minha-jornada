@@ -44,8 +44,7 @@ alter table journeys
 -- updates valid while old and new application instances may briefly coexist.
 create or replace function ensure_journey_patient_link()
 returns trigger
-language plpgsql
-as $
+as $fn$
 declare
   existing_patient_id text;
 begin
@@ -87,7 +86,7 @@ begin
 
   return new;
 end;
-$;
+$fn$ language plpgsql;
 
 drop trigger if exists journeys_patient_link_guard on journeys;
 
@@ -98,8 +97,7 @@ execute function ensure_journey_patient_link();
 
 create or replace function sync_patient_from_legacy_journey()
 returns trigger
-language plpgsql
-as $
+as $fn$
 begin
   update patients
   set doctor_user_id = coalesce(new.doctor_user_id, doctor_user_id),
@@ -110,7 +108,7 @@ begin
 
   return new;
 end;
-$;
+$fn$ language plpgsql;
 
 drop trigger if exists journeys_patient_sync on journeys;
 
