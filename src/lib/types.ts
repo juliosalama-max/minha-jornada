@@ -166,6 +166,15 @@ export type JourneyModuleType =
   | "questionnaire"
   | "custom";
 
+export type JourneyAlertRule = {
+  id: string;
+  questionId: string;
+  operator: "equals" | "not_equals" | "includes" | "gte" | "lte";
+  value: string | number | boolean;
+  title: string;
+  severity: "attention" | "important";
+};
+
 export type JourneyModule = {
   id: string;
   type: JourneyModuleType;
@@ -178,6 +187,7 @@ export type JourneyModule = {
   reviewDate: string;
   required: boolean;
   questions: JourneyQuestion[];
+  alerts?: JourneyAlertRule[];
 };
 
 export type JourneyPriority = {
@@ -322,6 +332,18 @@ export type PatientSummary = {
   pending: boolean;
   journeyStatus?: JourneyStatus;
   currentVersion?: number;
+};
+
+export type DoctorAlert = {
+  id: string;
+  journeyId: string;
+  patientName: string;
+  moduleTitle: string;
+  title: string;
+  severity: "attention" | "important";
+  occurredOn: string;
+  createdAt: string;
+  read: boolean;
 };
 
 export type DoctorNotice = {

@@ -1,16 +1,13 @@
 import { create } from "zustand";
 import {
-  DEFAULT_CONSULTS,
-  DEFAULT_NUTRITION,
-  DEFAULT_TASKS,
-} from "./constants";
-import {
   chooseRole as chooseRoleFn,
   claimPlanByCode,
   createDoctorPlan,
   getBootstrap,
   linkPatientByCode,
+  listDoctorAlerts,
   listDoctorNotices,
+  markDoctorAlertsRead as markDoctorAlertsReadFn,
   markNoticesRead as markNoticesReadFn,
   saveConsults,
   saveDayLog,
@@ -30,6 +27,7 @@ import { emptyPlan } from "./plan-templates";
 import { emptyJourneyPlan } from "./journey-plan";
 import type {
   DayLog,
+  DoctorAlert,
   JournalSnapshot,
   JourneyActionProgress,
   JourneyPlanV2,
@@ -55,9 +53,9 @@ const emptyProfile = (): Profile => ({
 const seed = (): JournalSnapshot => ({
   onboarded: false,
   profile: emptyProfile(),
-  consults: DEFAULT_CONSULTS.map((c) => ({ ...c })),
-  nutrition: DEFAULT_NUTRITION.map((c) => ({ ...c })),
-  tasks: DEFAULT_TASKS.map((t) => ({ ...t, meta: t.meta ? { ...t.meta } : undefined })),
+  consults: [],
+  nutrition: [],
+  tasks: [],
   days: {},
   monthNotes: {},
   plan: emptyPlan(),
@@ -82,6 +80,7 @@ type JournalState = JournalSnapshot & {
   patientName: string | null;
   patients: PatientSummary[];
   notices: DoctorNotice[];
+  alerts: DoctorAlert[];
   applyBootstrap: (b: Bootstrap) => void;
   hydrate: (journeyId?: string | null) => Promise<void>;
   chooseRole: (role: Role, name: string, inviteCode?: string) => Promise<void>;
@@ -119,6 +118,8 @@ type JournalState = JournalSnapshot & {
   clear: () => void;
   refreshNotices: () => Promise<void>;
   markNoticesRead: (ids?: string[]) => Promise<void>;
+  refreshAlerts: () => Promise<void>;
+  markAlertsRead: (ids?: string[]) => Promise<void>;
 };
 
 function applySnapshot(s: JournalSnapshot) {
@@ -156,6 +157,7 @@ export const useJournal = create<JournalState>((set, get) => ({
   patientName: null,
   patients: [],
   notices: [],
+  alerts: [],
   applyBootstrap: (b) => {
     if (b.kind === "needs-role") {
       set({
@@ -168,6 +170,7 @@ export const useJournal = create<JournalState>((set, get) => ({
         patientName: null,
         patients: [],
         notices: [],
+        alerts: [],
       });
       return;
     }
@@ -182,6 +185,7 @@ export const useJournal = create<JournalState>((set, get) => ({
         patientName: b.name,
         patients: [],
         notices: [],
+        alerts: [],
       });
       return;
     }
@@ -195,6 +199,7 @@ export const useJournal = create<JournalState>((set, get) => ({
         patientName: b.snapshot.profile.name,
         patients: [],
         notices: [],
+        alerts: [],
         ...applySnapshot(b.snapshot),
       });
       return;
@@ -208,6 +213,7 @@ export const useJournal = create<JournalState>((set, get) => ({
       patientName: b.patientName,
       patients: b.patients,
       notices: b.notices ?? [],
+      alerts: b.alerts ?? [],
       ...(b.snapshot ? applySnapshot(b.snapshot) : seed()),
     });
   },
@@ -242,7 +248,7 @@ export const useJournal = create<JournalState>((set, get) => ({
     get().applyBootstrap(b);
   },
   leavePatient: () => {
-    const { patients, doctorName } = get();
+    const { patients, doctorName, notices, alerts } = get();
     set({
       ...seed(),
       ready: true,
@@ -252,7 +258,8 @@ export const useJournal = create<JournalState>((set, get) => ({
       doctorName,
       patientName: null,
       patients,
-      notices: get().notices,
+      notices,
+      alerts,
     });
   },
   completeOnboarding: (profile) => {
@@ -428,6 +435,7 @@ export const useJournal = create<JournalState>((set, get) => ({
       patientName: null,
       patients: [],
       notices: [],
+      alerts: [],
     }),
   refreshNotices: async () => {
     if (get().role !== "doctor") return;
@@ -438,5 +446,15 @@ export const useJournal = create<JournalState>((set, get) => ({
     if (get().role !== "doctor") return;
     const notices = await markNoticesReadFn({ data: { ids } });
     set({ notices });
+  },
+  refreshAlerts: async () => {
+    if (get().role !== "doctor") return;
+    const alerts = await listDoctorAlerts();
+    set({ alerts });
+  },
+  markAlertsRead: async (ids) => {
+    if (get().role !== "doctor") return;
+    const alerts = await markDoctorAlertsReadFn({ data: { ids } });
+    set({ alerts });
   },
 }));
