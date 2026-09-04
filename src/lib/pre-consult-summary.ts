@@ -1,6 +1,4 @@
-import { format, parseISO, subDays } from "date-fns";
-import { openCareActionCount, resolvedAppointmentDate } from "./journey-actions";
-import { formatJourneyAnswer } from "./journey-response-format";
+import { addDays, format, parseISO, subDays } from "date-fns";
 import type {
   DoctorAlert,
   JourneyActionProgress,
@@ -77,7 +75,7 @@ export function buildPreConsultSummary({
     )
     .map((appointment) => ({
       appointment,
-      date: resolvedAppointmentDate(plan, appointment),
+      date: resolvedAppointmentDateForSummary(plan, appointment),
     }))
     .filter((item) => item.date && item.date >= todayKey)
     .sort((a, b) => a.date.localeCompare(b.date))
@@ -96,7 +94,7 @@ export function buildPreConsultSummary({
     totalResponses: recentResponses.length,
     daysWithResponses: new Set(recentResponses.map((response) => response.occurredOn)).size,
     modulesWithResponses: moduleSummaries.length,
-    openCareActions: openCareActionCount(plan, progress, "doctor"),
+    openCareActions: openCareActionCountForSummary(plan, progress),
     alertsInPeriod: alerts.filter(
       (alert) => alert.occurredOn >= startKey && alert.occurredOn <= todayKey,
     ).length,
@@ -210,11 +208,71 @@ function summarizeQuestion(
   const latest = values
     .sort((a, b) => b.response.occurredOn.localeCompare(a.response.occurredOn))[0];
   if (!latest) return null;
-  const formatted = formatJourneyAnswer(question, latest.value);
+  const formatted = formatAnswerForSummary(question, latest.value);
   return {
     label: question.label,
     value: formatted.length > 180 ? `${formatted.slice(0, 177)}…` : formatted,
   };
+}
+
+function openCareActionCountForSummary(
+  plan: JourneyPlanV2,
+  progress: JourneyActionProgress[],
+): number {
+  const completed = new Set(
+    progress
+      .filter((item) => item.status === "completed")
+      .map((item) => `${item.actionType}:${item.actionId}`),
+  );
+  const tasks = plan.tasks.filter(
+    (task) => !completed.has(`task:${task.id}`),
+  ).length;
+  const exams = plan.exams.filter(
+    (exam) => !completed.has(`exam:${exam.id}`),
+  ).length;
+  return tasks + exams;
+}
+
+function resolvedAppointmentDateForSummary(
+  plan: JourneyPlanV2,
+  appointment: JourneyPlanV2["appointments"][number],
+): string {
+  if (appointment.date) return appointment.date;
+  if (plan.startDate && appointment.offsetDays != null) {
+    return format(
+      addDays(parseISO(plan.startDate), appointment.offsetDays),
+      "yyyy-MM-dd",
+    );
+  }
+  return "";
+}
+
+function formatAnswerForSummary(
+  question: JourneyQuestion,
+  value: JourneyModuleResponse["answers"][string],
+): string {
+  if (value === null || value === undefined) return "—";
+  if (question.type === "boolean" || question.type === "event") {
+    return value === true ? "Sim" : value === false ? "Não" : String(value);
+  }
+  if (question.type === "single_choice" || question.type === "emotion") {
+    if (typeof value !== "string") return String(value);
+    return question.options?.find((option) => option.id === value)?.label ?? value;
+  }
+  if (question.type === "multiple_choice") {
+    if (!Array.isArray(value)) return String(value);
+    return value
+      .map(
+        (item) =>
+          question.options?.find((option) => option.id === item)?.label ?? item,
+      )
+      .join(", ");
+  }
+  if (question.type === "duration") {
+    return typeof value === "number" ? `${value} min` : String(value);
+  }
+  if (Array.isArray(value)) return value.join(", ");
+  return String(value);
 }
 
 function appointmentLabel(
