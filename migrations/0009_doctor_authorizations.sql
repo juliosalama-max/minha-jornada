@@ -19,7 +19,6 @@ on conflict (user_id) do nothing;
 
 create or replace function enforce_authorized_doctor_profile()
 returns trigger
-language plpgsql
 as $$
 begin
   if new.role = 'doctor' and not exists (
@@ -32,7 +31,7 @@ begin
   end if;
   return new;
 end;
-$$;
+$$ language plpgsql;
 
 drop trigger if exists profiles_doctor_authorization_guard on profiles;
 
