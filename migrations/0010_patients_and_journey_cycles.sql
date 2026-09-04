@@ -39,6 +39,86 @@ where patient_id is null;
 alter table journeys
   drop constraint if exists journeys_patient_user_id_key;
 
+-- Rollout/rollback compatibility: the previous application version does not
+-- know about patients or journeys.patient_id. Keep old inserts and claim/link
+-- updates valid while old and new application instances may briefly coexist.
+create or replace function ensure_journey_patient_link()
+returns trigger
+language plpgsql
+as $
+declare
+  existing_patient_id text;
+begin
+  if new.patient_id is null then
+    if new.patient_user_id is not null then
+      select id
+      into existing_patient_id
+      from patients
+      where patient_user_id = new.patient_user_id
+      limit 1;
+    end if;
+
+    new.patient_id := coalesce(existing_patient_id, 'legacy-patient-' || new.id);
+
+    insert into patients (
+      id,
+      doctor_user_id,
+      patient_user_id,
+      name,
+      created_at,
+      updated_at
+    ) values (
+      new.patient_id,
+      new.doctor_user_id,
+      new.patient_user_id,
+      new.name,
+      now(),
+      coalesce(new.updated_at, now())
+    )
+    on conflict (id) do update set
+      doctor_user_id = coalesce(excluded.doctor_user_id, patients.doctor_user_id),
+      patient_user_id = coalesce(excluded.patient_user_id, patients.patient_user_id),
+      name = case
+        when excluded.name <> '' then excluded.name
+        else patients.name
+      end,
+      updated_at = now();
+  end if;
+
+  return new;
+end;
+$;
+
+drop trigger if exists journeys_patient_link_guard on journeys;
+
+create trigger journeys_patient_link_guard
+before insert on journeys
+for each row
+execute function ensure_journey_patient_link();
+
+create or replace function sync_patient_from_legacy_journey()
+returns trigger
+language plpgsql
+as $
+begin
+  update patients
+  set doctor_user_id = coalesce(new.doctor_user_id, doctor_user_id),
+      patient_user_id = coalesce(new.patient_user_id, patient_user_id),
+      name = case when new.name <> '' then new.name else name end,
+      updated_at = now()
+  where id = new.patient_id;
+
+  return new;
+end;
+$;
+
+drop trigger if exists journeys_patient_sync on journeys;
+
+create trigger journeys_patient_sync
+after update of patient_user_id, doctor_user_id, name on journeys
+for each row
+execute function sync_patient_from_legacy_journey();
+
 alter table journeys
   alter column patient_id set not null;
 
