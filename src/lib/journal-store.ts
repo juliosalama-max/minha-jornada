@@ -1,10 +1,5 @@
 import { create } from "zustand";
 import {
-  DEFAULT_CONSULTS,
-  DEFAULT_NUTRITION,
-  DEFAULT_TASKS,
-} from "./constants";
-import {
   chooseRole as chooseRoleFn,
   claimPlanByCode,
   createDoctorPlan,
@@ -58,9 +53,9 @@ const emptyProfile = (): Profile => ({
 const seed = (): JournalSnapshot => ({
   onboarded: false,
   profile: emptyProfile(),
-  consults: DEFAULT_CONSULTS.map((c) => ({ ...c })),
-  nutrition: DEFAULT_NUTRITION.map((c) => ({ ...c })),
-  tasks: DEFAULT_TASKS.map((t) => ({ ...t, meta: t.meta ? { ...t.meta } : undefined })),
+  consults: [],
+  nutrition: [],
+  tasks: [],
   days: {},
   monthNotes: {},
   plan: emptyPlan(),
