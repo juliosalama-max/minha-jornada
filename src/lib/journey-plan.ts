@@ -1,5 +1,6 @@
 import { emptyPlan, normalizePlan } from "./plan-templates";
 import type {
+  JourneyAlertRule,
   JourneyAppointment,
   JourneyExam,
   JourneyFrequency,
@@ -82,6 +83,25 @@ function normalizeQuestion(raw: Partial<JourneyQuestion>, index: number): Journe
   };
 }
 
+function normalizeAlertRule(
+  raw: Partial<JourneyAlertRule>,
+  index: number,
+): JourneyAlertRule {
+  return {
+    id: String(raw.id || `alert-${index + 1}`),
+    questionId: String(raw.questionId ?? ""),
+    operator: raw.operator ?? "equals",
+    value:
+      typeof raw.value === "string" ||
+      typeof raw.value === "number" ||
+      typeof raw.value === "boolean"
+        ? raw.value
+        : "",
+    title: String(raw.title ?? ""),
+    severity: raw.severity === "important" ? "important" : "attention",
+  };
+}
+
 function normalizeModule(raw: Partial<JourneyModule>, index: number): JourneyModule {
   const type = raw.type ?? "custom";
   return {
@@ -105,6 +125,7 @@ function normalizeModule(raw: Partial<JourneyModule>, index: number): JourneyMod
     reviewDate: String(raw.reviewDate ?? ""),
     required: Boolean(raw.required),
     questions: (raw.questions ?? []).map(normalizeQuestion),
+    alerts: (raw.alerts ?? []).map(normalizeAlertRule),
   };
 }
 
