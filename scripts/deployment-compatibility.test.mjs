@@ -43,3 +43,20 @@ test("rollout compatibility is repaired idempotently in later environments", () 
   assert.match(sql, /create or replace function prepare_legacy_journey_v2_fields/);
   assert.match(sql, /create or replace function ensure_journey_patient_link/);
 });
+
+
+test("PL/pgSQL migrations use complete named dollar delimiters", () => {
+  for (const name of [
+    "0005_journey_versions.sql",
+    "0009_doctor_authorizations.sql",
+    "0010_patients_and_journey_cycles.sql",
+    "0012_rollout_compatibility.sql",
+  ]) {
+    const sql = readFileSync(join(root, "migrations", name), "utf8");
+    assert.doesNotMatch(sql, /\nas \$\s*\n/);
+    assert.doesNotMatch(sql, /\n\$;\s*(?:\n|$)/);
+    const starts = sql.match(/as \$fn\$/g) ?? [];
+    const ends = sql.match(/\$fn\$ language plpgsql;/g) ?? [];
+    assert.equal(starts.length, ends.length, `unbalanced PL/pgSQL delimiter in ${name}`);
+  }
+});
