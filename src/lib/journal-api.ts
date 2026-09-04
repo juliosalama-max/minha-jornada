@@ -433,6 +433,19 @@ async function requireAuthorizedDoctor(
   return profile;
 }
 
+async function patientRecordByUser(
+  sql: Sql,
+  userId: string,
+): Promise<PatientRow | null> {
+  const rows = await sql<PatientRow>`
+    select *
+    from patients
+    where patient_user_id = ${userId}
+    limit 1
+  `;
+  return rows[0] ?? null;
+}
+
 async function patientJourney(sql: Sql, userId: string) {
   const rows = await sql<JourneyRow>`
     select journey.*
@@ -992,6 +1005,11 @@ async function claimJourney(sql: Sql, userId: string, code: string, displayName?
     throw new Error("Este código já foi usado por outro paciente.");
   }
 
+  const linkedPatient = await patientRecordByUser(sql, userId);
+  if (linkedPatient && linkedPatient.id !== patient.id) {
+    throw new Error("Esta conta já está vinculada a outro cadastro de paciente.");
+  }
+
   const name = patient.name || journey.name || displayName || "";
 
   await sql`
@@ -1176,17 +1194,18 @@ export const saveProfile = createServerFn({ method: "POST" })
     if (!actor) throw new Error("Perfil não encontrado");
 
     if (actor.role === "patient") {
-      const journey = await resolvePatientJourney(sql, context.userId);
+      const patient = await patientRecordByUser(sql, context.userId);
+      if (!patient) throw new Error("Cadastro de paciente não encontrado.");
       const name = data.profile.name.trim();
       await sql`
         update patients
         set name = ${name}, updated_at = now()
-        where id = ${journey.patient_id}
+        where id = ${patient.id}
       `;
       await sql`
         update journeys
         set name = ${name}, updated_at = now()
-        where patient_id = ${journey.patient_id}
+        where patient_id = ${patient.id}
       `;
       await sql`
         update profiles set display_name = ${name}
@@ -1197,6 +1216,15 @@ export const saveProfile = createServerFn({ method: "POST" })
 
     const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
     const name = data.profile.name.trim();
+    const clinicalLegacyChanged =
+      data.profile.firstConsultDate !== journey.first_consult_date ||
+      data.profile.injectionWeekday !== journey.injection_weekday ||
+      data.profile.dose !== journey.dose;
+
+    if (clinicalLegacyChanged) {
+      assertJourneyEditable(journey);
+    }
+
     await sql`
       update patients
       set name = ${name},
@@ -1209,17 +1237,21 @@ export const saveProfile = createServerFn({ method: "POST" })
           updated_at = now()
       where patient_id = ${journey.patient_id}
     `;
-    await sql`
-      update journeys
-      set first_consult_date = ${data.profile.firstConsultDate},
-          injection_weekday = ${data.profile.injectionWeekday},
-          dose = ${data.profile.dose},
-          updated_at = now()
-      where id = ${journey.id}
-    `;
+
+    if (clinicalLegacyChanged) {
+      await sql`
+        update journeys
+        set first_consult_date = ${data.profile.firstConsultDate},
+            injection_weekday = ${data.profile.injectionWeekday},
+            dose = ${data.profile.dose},
+            updated_at = now()
+        where id = ${journey.id}
+      `;
+    }
+
     if (journey.patient_user_id) {
       await sql`
-        update profiles set display_name = ${data.profile.name}
+        update profiles set display_name = ${name}
         where user_id = ${journey.patient_user_id}
       `;
     }
