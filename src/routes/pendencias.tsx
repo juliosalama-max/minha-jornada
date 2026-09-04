@@ -114,7 +114,7 @@ function PendenciasPage() {
                 key={task.id}
                 task={task}
                 progress={actionProgressFor(progress, "task", task.id)}
-                patient={role === "patient" && task.responsible === "patient"}
+                patient={patientCanUpdate && task.responsible === "patient"}
                 onStatus={(status) =>
                   void updateProgress("task", task.id, status)
                 }
@@ -189,6 +189,7 @@ function PendenciasPage() {
       ) : (
         <LegacyPending
           role={role}
+          patientCanUpdate={patientCanUpdate}
           openTasks={legacyOpenTasks}
           examTasks={legacyExamTasks}
           completedTasks={legacyCompletedTasks}
@@ -394,6 +395,7 @@ function VersionedExamCard({
 
 function LegacyPending({
   role,
+  patientCanUpdate,
   openTasks,
   examTasks,
   completedTasks,
@@ -402,6 +404,7 @@ function LegacyPending({
   onToggle,
 }: {
   role: "patient" | "doctor" | null;
+  patientCanUpdate: boolean;
   openTasks: Task[];
   examTasks: Task[];
   completedTasks: Task[];
