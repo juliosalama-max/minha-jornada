@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { AlertFeed } from "@/components/alert-feed";
 import { DoctorPreConsultSummary } from "@/components/doctor-pre-consult-summary";
+import { JourneyHistoryPanel } from "@/components/journey-history-panel";
 import { NoticeFeed } from "@/components/notice-feed";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -222,7 +223,7 @@ function DoctorHome() {
   const inviteCode = useJournal((s) => s.inviteCode);
   const patients = useJournal((s) => s.patients);
   const journeyId = useJournal((s) => s.journeyId);
-  const patientSummary = patients.find((patient) => patient.id === journeyId);
+  const patientSummary = patients.find((patient) => patient.journeyId === journeyId);
   const activeModules = journeyPlan.modules.filter((module) => module.enabled);
   const hasVersionedActions =
     journeyPlan.tasks.length > 0 ||
@@ -350,6 +351,7 @@ function DoctorHome() {
         />
       </section>
 
+      <JourneyHistoryPanel />
       <DoctorPreConsultSummary />
       <AlertFeed journeyOnly />
       <NoticeFeed />
