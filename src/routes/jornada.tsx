@@ -107,6 +107,8 @@ function PatientJornada() {
   const plan = useJournal((s) => s.plan);
   const journeyPlan = useJournal((s) => s.journeyPlan);
   const journeyMeta = useJournal((s) => s.journeyMeta);
+  const closed =
+    journeyMeta.status === "completed" || journeyMeta.status === "archived";
   const toggleTask = useJournal((s) => s.toggleTask);
   const updateTaskMeta = useJournal((s) => s.updateTaskMeta);
   const done = tasks.filter((t) => t.done).length;
@@ -376,6 +378,7 @@ function PatientJornada() {
                   <TaskRow
                     key={t.id}
                     task={t}
+                    editable={!closed}
                     onToggle={() => toggleTask(t.id)}
                     onMeta={(meta) => updateTaskMeta(t.id, meta)}
                   />
@@ -393,17 +396,24 @@ function PatientJornada() {
 
 function TaskRow({
   task,
+  editable,
   onToggle,
   onMeta,
 }: {
   task: Task;
+  editable: boolean;
   onToggle: () => void;
   onMeta: (meta: Record<string, string>) => void;
 }) {
   return (
     <div className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
       <label className="flex items-start gap-3">
-        <Checkbox checked={task.done} onCheckedChange={() => onToggle()} className="mt-0.5" />
+        <Checkbox
+          checked={task.done}
+          disabled={!editable}
+          onCheckedChange={() => onToggle()}
+          className="mt-0.5"
+        />
         <span className={cn("text-sm leading-relaxed", task.done && "text-muted-foreground line-through")}>
           {task.title}
         </span>
@@ -419,6 +429,7 @@ function TaskRow({
               type="date"
               className="mt-1"
               value={task.meta?.date ?? ""}
+              disabled={!editable}
               onChange={(e) => onMeta({ date: e.target.value })}
             />
           </div>
@@ -430,6 +441,7 @@ function TaskRow({
               id="psg-local"
               className="mt-1"
               value={task.meta?.local ?? ""}
+              disabled={!editable}
               onChange={(e) => onMeta({ local: e.target.value })}
             />
           </div>
@@ -445,6 +457,7 @@ function TaskRow({
               id="cardio-ex"
               className="mt-1"
               value={task.meta?.exams ?? ""}
+              disabled={!editable}
               onChange={(e) => onMeta({ exams: e.target.value })}
             />
           </div>
