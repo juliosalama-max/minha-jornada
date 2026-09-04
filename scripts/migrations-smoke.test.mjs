@@ -26,7 +26,7 @@ async function migratedDb() {
 test("all application migrations execute from an empty database", async () => {
   const pg = await migratedDb();
   try {
-    const tables = await pg.query<{ tablename: string }>(
+    const tables = await pg.query(
       "select tablename from pg_tables where schemaname = 'public'",
     );
     const names = new Set(tables.rows.map((row) => row.tablename));
@@ -96,7 +96,7 @@ test("legacy inserts remain valid after the full V2 schema", async () => {
     assert.equal(journey.journey_status, "published");
     assert.equal(Number(journey.current_version), 1);
 
-    const versions = await pg.query<{ count: bigint }>(
+    const versions = await pg.query(
       "select count(*) as count from journey_versions where journey_id = 'legacy-j1'",
     );
     assert.equal(Number(versions.rows[0]?.count ?? 0), 1);
@@ -106,7 +106,7 @@ test("legacy inserts remain valid after the full V2 schema", async () => {
     );
 
     const patient = (
-      await pg.query<{ patient_user_id: string; name: string }>(
+      await pg.query(
         "select patient_user_id, name from patients where id = $1",
         [journey.patient_id],
       )
@@ -179,7 +179,7 @@ test("new V2 drafts are not auto-published by rollout compatibility triggers", a
     );
 
     const row = (
-      await pg.query<{ journey_status: string; current_version: number }>(
+      await pg.query(
         "select journey_status, current_version from journeys where id = 'journey-v2'",
       )
     ).rows[0];
@@ -187,7 +187,7 @@ test("new V2 drafts are not auto-published by rollout compatibility triggers", a
     assert.equal(row.journey_status, "draft");
     assert.equal(Number(row.current_version), 0);
 
-    const versions = await pg.query<{ count: bigint }>(
+    const versions = await pg.query(
       "select count(*) as count from journey_versions where journey_id = 'journey-v2'",
     );
     assert.equal(Number(versions.rows[0]?.count ?? 0), 0);
@@ -213,7 +213,7 @@ test("doctor profile requires administrative authorization", async () => {
     );
 
     const row = (
-      await pg.query<{ role: string }>(
+      await pg.query(
         "select role from profiles where user_id = 'doctor-x'",
       )
     ).rows[0];
