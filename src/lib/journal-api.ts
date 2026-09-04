@@ -712,6 +712,83 @@ async function loadBootstrap(
     order by updated_at desc
   `;
 
+  const responseMetricRows = await sql<{
+    journey_id: string;
+    last_record_at: string | null;
+  }>`
+    select
+      response.journey_id,
+      max(response.updated_at)::text as last_record_at
+    from journey_module_responses response
+    join journeys journey on journey.id = response.journey_id
+    where journey.doctor_user_id = ${userId}
+    group by response.journey_id
+  `;
+  const alertMetricRows = await sql<{
+    journey_id: string;
+    unread_alerts: number;
+  }>`
+    select
+      alert.journey_id,
+      count(*)::int as unread_alerts
+    from doctor_alerts alert
+    join journeys journey on journey.id = alert.journey_id
+    where journey.doctor_user_id = ${userId}
+      and alert.read_at is null
+    group by alert.journey_id
+  `;
+  const progressMetricRows = await sql<{
+    journey_id: string;
+    action_type: "task" | "exam";
+    action_id: string;
+    status: "pending" | "scheduled" | "completed" | "cancelled";
+  }>`
+    select
+      progress.journey_id,
+      progress.action_type,
+      progress.action_id,
+      progress.status
+    from journey_action_progress progress
+    join journeys journey on journey.id = progress.journey_id
+    where journey.doctor_user_id = ${userId}
+  `;
+
+  const lastRecordByJourney = new Map(
+    responseMetricRows.map((row) => [row.journey_id, row.last_record_at]),
+  );
+  const unreadAlertsByJourney = new Map(
+    alertMetricRows.map((row) => [row.journey_id, Number(row.unread_alerts || 0)]),
+  );
+
+  function openActionsForJourney(journey: JourneyRow | undefined): number {
+    if (
+      !journey ||
+      journey.current_version < 1 ||
+      journey.journey_status === "completed" ||
+      journey.journey_status === "archived"
+    ) {
+      return 0;
+    }
+
+    const plan = parseJourneyPlan(journey.published_plan, journey.plan);
+    const completed = new Set(
+      progressMetricRows
+        .filter(
+          (item) =>
+            item.journey_id === journey.id && item.status === "completed",
+        )
+        .map((item) => `${item.action_type}:${item.action_id}`),
+    );
+
+    const tasks = plan.tasks.filter(
+      (task) => !completed.has(`task:${task.id}`),
+    ).length;
+    const exams = plan.exams.filter(
+      (exam) => !completed.has(`exam:${exam.id}`),
+    ).length;
+    return tasks + exams;
+  }
+
   const patients: PatientSummary[] = patientRows.map((patient) => {
     const cycles = sortJourneyCycles(
       journeyRows.filter((journey) => journey.patient_id === patient.id),
@@ -730,6 +807,9 @@ async function loadBootstrap(
       journeyStatus: current?.journey_status,
       currentVersion: Number(current?.current_version || 0),
       journeyCount: cycles.length,
+      lastRecordAt: current ? lastRecordByJourney.get(current.id) ?? null : null,
+      unreadAlerts: current ? unreadAlertsByJourney.get(current.id) ?? 0 : 0,
+      openActions: openActionsForJourney(current),
     };
   });
 

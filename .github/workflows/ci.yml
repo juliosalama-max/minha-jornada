@@ -32,13 +32,14 @@ jobs:
 
       - name: Journey and app tests
         run: |
-          node --test scripts/migration-plan.test.mjs scripts/doctor-access-security.test.mjs scripts/patient-journey-cycles.test.mjs
+          node --test scripts/migration-plan.test.mjs scripts/doctor-access-security.test.mjs scripts/patient-journey-cycles.test.mjs scripts/v2-journey-driven-ui.test.mjs
           node --experimental-strip-types --test \
             src/lib/journey-schedule.test.ts \
             src/lib/journey-response-format.test.ts \
             src/lib/journey-actions.test.ts \
             src/lib/journey-alerts.test.ts \
             src/lib/pre-consult-summary.test.ts \
+            src/lib/doctor-patient-dashboard.test.ts \
             src/lib/app-data/app-data.test.ts \
             src/lib/auth/gate-identity.test.ts
 

@@ -344,6 +344,9 @@ export type PatientSummary = {
   journeyStatus?: JourneyStatus;
   currentVersion?: number;
   journeyCount: number;
+  lastRecordAt: string | null;
+  unreadAlerts: number;
+  openActions: number;
 };
 
 export type DoctorAlert = {

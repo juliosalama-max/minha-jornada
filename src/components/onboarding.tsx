@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
-import { CARE_FOCUS, CLINIC_NAME, CLINIC_TAGLINE } from "@/lib/constants";
+import { CLINIC_NAME, CLINIC_TAGLINE } from "@/lib/constants";
 import { useJournal } from "@/lib/journal-store";
 
 export function Onboarding() {
@@ -24,17 +24,20 @@ export function Onboarding() {
           Minha jornada
         </h1>
         <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
-          {CLINIC_TAGLINE}. Acompanhe medicação, movimento, sono e refeições com
-          calendários sinceros — não medem perfeição, mostram o que ajustar.
-          Tudo fica salvo na sua conta para você e a médica verem juntos.
+          {CLINIC_TAGLINE}. Aqui você verá somente os registros e ações que fazem
+          parte da Jornada preparada para este ciclo. Suas respostas ficam
+          organizadas para acompanhar a evolução entre as consultas.
         </p>
       </div>
 
       <div className="rounded-xl bg-accent/70 p-4 text-sm leading-relaxed text-accent-foreground">
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
-          Foco do cuidado
+          Como funciona
         </p>
-        <p className="mt-1.5">{CARE_FOCUS}</p>
+        <p className="mt-1.5">
+          A médica define a Jornada. Você registra sua experiência. O sistema
+          organiza as informações para serem revisadas ao longo do acompanhamento.
+        </p>
       </div>
 
       <form
