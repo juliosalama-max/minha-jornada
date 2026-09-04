@@ -83,11 +83,7 @@ test("legacy inserts remain valid after the full V2 schema", async () => {
     );
 
     const journey = (
-      await pg.query<{
-        patient_id: string;
-        journey_status: string;
-        current_version: number;
-      }>(
+      await pg.query(
         "select patient_id, journey_status, current_version from journeys where id = 'legacy-j1'",
       )
     ).rows[0];
