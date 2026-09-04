@@ -62,7 +62,8 @@ test("doctor list opens a journey through the patient summary", () => {
     "utf8",
   );
 
-  assert.match(desk, /p\.journeyId/);
-  assert.match(desk, /p\.journeyCount/);
+  assert.match(desk, /\.journeyId/);
+  assert.match(desk, /\.journeyCount/);
+  assert.match(desk, /openPatient\(patientSummary\.journeyId\)/);
   assert.doesNotMatch(desk, /Vincular jornada já criada pelo paciente/);
 });
