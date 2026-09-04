@@ -70,6 +70,7 @@ test("the auth schema source stays outside the globbed directory while app migra
   assert.ok(pending.some(({ name }) => name === "0008_doctor_alerts.sql"));
   assert.ok(pending.some(({ name }) => name === "0009_doctor_authorizations.sql"));
   assert.ok(pending.some(({ name }) => name === "0010_patients_and_journey_cycles.sql"));
+  assert.ok(pending.some(({ name }) => name === "0011_patient_account_uniqueness.sql"));
   assert.ok(readdirSync(join(migrationsDir, "auth")).includes("0001_auth.sql"));
 });
 
