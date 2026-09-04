@@ -2,7 +2,9 @@ import { create } from "zustand";
 import {
   chooseRole as chooseRoleFn,
   claimPlanByCode,
+  closeJourneyCycle,
   createDoctorPlan,
+  createNextJourneyCycle,
   getBootstrap,
   linkPatientByCode,
   listDoctorAlerts,
@@ -32,6 +34,7 @@ import type {
   JourneyActionProgress,
   JourneyPlanV2,
   JourneyAnswerValue,
+  JourneyCycleSummary,
   JourneyModuleResponse,
   MonthNotes,
   PatientSummary,
@@ -79,6 +82,7 @@ type JournalState = JournalSnapshot & {
   doctorName: string | null;
   patientName: string | null;
   patients: PatientSummary[];
+  journeyHistory: JourneyCycleSummary[];
   notices: DoctorNotice[];
   alerts: DoctorAlert[];
   applyBootstrap: (b: Bootstrap) => void;
@@ -88,6 +92,8 @@ type JournalState = JournalSnapshot & {
   claimCode: (code: string) => Promise<void>;
   createPlan: (data: { patientName: string; firstConsultDate?: string }) => Promise<void>;
   openPatient: (journeyId: string) => Promise<void>;
+  closeCurrentJourney: (status: "completed" | "archived") => Promise<void>;
+  startNextJourney: (firstConsultDate?: string) => Promise<void>;
   leavePatient: () => void;
   completeOnboarding: (profile: Partial<Profile>) => void;
   setProfile: (patch: Partial<Profile>) => void;
@@ -156,6 +162,7 @@ export const useJournal = create<JournalState>((set, get) => ({
   doctorName: null,
   patientName: null,
   patients: [],
+  journeyHistory: [],
   notices: [],
   alerts: [],
   applyBootstrap: (b) => {
@@ -169,6 +176,7 @@ export const useJournal = create<JournalState>((set, get) => ({
         doctorName: null,
         patientName: null,
         patients: [],
+        journeyHistory: [],
         notices: [],
         alerts: [],
       });
@@ -184,6 +192,7 @@ export const useJournal = create<JournalState>((set, get) => ({
         doctorName: null,
         patientName: b.name,
         patients: [],
+        journeyHistory: [],
         notices: [],
         alerts: [],
       });
@@ -198,6 +207,7 @@ export const useJournal = create<JournalState>((set, get) => ({
         doctorName: b.doctorName,
         patientName: b.snapshot.profile.name,
         patients: [],
+        journeyHistory: [],
         notices: [],
         alerts: [],
         ...applySnapshot(b.snapshot),
@@ -212,6 +222,7 @@ export const useJournal = create<JournalState>((set, get) => ({
       doctorName: b.doctorName,
       patientName: b.patientName,
       patients: b.patients,
+      journeyHistory: b.journeyHistory ?? [],
       notices: b.notices ?? [],
       alerts: b.alerts ?? [],
       ...(b.snapshot ? applySnapshot(b.snapshot) : seed()),
@@ -247,6 +258,20 @@ export const useJournal = create<JournalState>((set, get) => ({
     const b = await getBootstrap({ data: { journeyId } });
     get().applyBootstrap(b);
   },
+  closeCurrentJourney: async (status) => {
+    const journeyId = get().journeyId;
+    if (!journeyId) throw new Error("Selecione uma Jornada.");
+    const b = await closeJourneyCycle({ data: { journeyId, status } });
+    get().applyBootstrap(b);
+  },
+  startNextJourney: async (firstConsultDate) => {
+    const journeyId = get().journeyId;
+    if (!journeyId) throw new Error("Selecione uma Jornada.");
+    const b = await createNextJourneyCycle({
+      data: { journeyId, firstConsultDate },
+    });
+    get().applyBootstrap(b);
+  },
   leavePatient: () => {
     const { patients, doctorName, notices, alerts } = get();
     set({
@@ -258,6 +283,7 @@ export const useJournal = create<JournalState>((set, get) => ({
       doctorName,
       patientName: null,
       patients,
+      journeyHistory: [],
       notices,
       alerts,
     });
@@ -434,6 +460,7 @@ export const useJournal = create<JournalState>((set, get) => ({
       doctorName: null,
       patientName: null,
       patients: [],
+      journeyHistory: [],
       notices: [],
       alerts: [],
     }),
