@@ -1,6 +1,6 @@
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { AlertFeed } from "@/components/alert-feed";
 import { LogoMark } from "@/components/logo";
 import { NoticeFeed } from "@/components/notice-feed";
@@ -334,7 +334,7 @@ function PopulationMetric({
   );
 }
 
-function OperationalBadge({ children }: { children: React.ReactNode }) {
+function OperationalBadge({ children }: { children: ReactNode }) {
   return (
     <span className="rounded-md bg-warn px-2 py-1 text-[11px] font-medium text-warn-foreground">
       {children}
