@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Check, Leaf } from "lucide-react";
+import { Check } from "lucide-react";
 import { PlanEditor } from "@/components/plan-editor";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -10,7 +10,6 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import {
   AEROBIC_OPTIONS,
-  BIOIMPEDANCE_PREP,
   STRENGTH_OPTIONS,
   SYMPTOMS,
   TASK_CATEGORY_LABEL,
@@ -232,6 +231,7 @@ function PatientJornada() {
       {journeyPlan.appointments.length === 0 &&
         journeyPlan.tasks.length === 0 &&
         journeyPlan.exams.length === 0 && (
+        <>
       <section className="space-y-3">
         <h2 className="font-display text-lg font-semibold">Consultas médicas</h2>
         <ol className="space-y-3">
@@ -312,15 +312,8 @@ function PatientJornada() {
         </section>
       )}
 
+        </>
       )}
-
-      <section className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
-        <h2 className="flex items-center gap-2 font-display text-lg font-semibold">
-          <Leaf className="size-4 text-primary" />
-          Antes de cada bioimpedância
-        </h2>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{BIOIMPEDANCE_PREP}</p>
-      </section>
     </div>
   );
 }
