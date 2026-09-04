@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AlertFeed } from "@/components/alert-feed";
 import { LogoMark } from "@/components/logo";
 import { NoticeFeed } from "@/components/notice-feed";
 import { Button } from "@/components/ui/button";
@@ -123,7 +124,8 @@ export function DoctorDesk() {
             <p className="mt-6 text-sm text-muted-foreground">Nenhum plano criado ainda.</p>
           )}
 
-          <div className="mt-8">
+          <div className="mt-8 space-y-4">
+            <AlertFeed />
             <NoticeFeed />
           </div>
         </>
