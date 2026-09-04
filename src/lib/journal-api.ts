@@ -488,6 +488,15 @@ async function resolveDoctorJourney(sql: Sql, userId: string, journeyId?: string
   return rows[0];
 }
 
+function assertJourneyEditable(journey: JourneyRow) {
+  if (
+    journey.journey_status === "completed" ||
+    journey.journey_status === "archived"
+  ) {
+    throw new Error("Este ciclo está encerrado e não pode mais ser alterado.");
+  }
+}
+
 async function doctorNameFor(sql: Sql, doctorUserId: string | null) {
   if (!doctorUserId) return null;
   const rows = await sql<{ display_name: string }>`
@@ -1149,6 +1158,7 @@ export const saveConsults = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+    assertJourneyEditable(journey);
     const consults = data.consults ?? parseJson(journey.consults, emptySnapshot().consults);
     const nutrition = data.nutrition ?? parseJson(journey.nutrition, emptySnapshot().nutrition);
     await sql`
@@ -1167,6 +1177,7 @@ export const saveTasks = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+    assertJourneyEditable(journey);
     await sql`
       update journeys
       set tasks = ${JSON.stringify(data.tasks)},
@@ -1214,6 +1225,7 @@ export const savePlan = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+    assertJourneyEditable(journey);
     const legacy = normalizePlan(data.plan);
     const currentDraft = parseJourneyPlan(journey.draft_plan, journey.plan);
     const nextDraft = withLegacyPlan(currentDraft, legacy);
@@ -1240,6 +1252,7 @@ export const saveJourneyDraft = createServerFn({ method: "POST" })
   .handler(async ({ context, data }): Promise<JournalSnapshot> => {
     const sql = await getSql();
     const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+    assertJourneyEditable(journey);
     const next = normalizeJourneyPlan(data.plan);
     const nextStatus =
       journey.current_version > 0 && journey.journey_status !== "draft"
@@ -1266,6 +1279,7 @@ export const publishJourney = createServerFn({ method: "POST" })
   .handler(async ({ context, data }): Promise<JournalSnapshot> => {
     const sql = await getSql();
     const journey = await resolveDoctorJourney(sql, context.userId, data.journeyId);
+    assertJourneyEditable(journey);
     const draft = normalizeJourneyPlan(
       parseJson<unknown>(journey.draft_plan, parseJson<unknown>(journey.plan, {})),
     );
