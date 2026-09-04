@@ -179,3 +179,10 @@ Antes de iniciar os testes:
 - usar banco isolado ou PGlite temporário, nunca `DATABASE_URL` de produção;
 - não associar o domínio de produção ao preview;
 - registrar o URL de preview usado no teste funcional.
+
+
+### Estado do banco de preview
+
+- Banco de preview configurado em Neon: `minha-jornada-v2-preview-db`.
+- A variável `DATABASE_URL` deve existir somente no ambiente Preview da Vercel.
+- O deploy da branch `release/v2-integration-final` deve confirmar o migrador como `up to date` antes do teste funcional.
