@@ -35,7 +35,7 @@ on conflict (journey_id, version) do nothing;
 
 create or replace function prepare_legacy_journey_v2_fields()
 returns trigger
-as $$
+as $fn$
 begin
   if new.current_version = 0
      and new.draft_plan = '{}'
@@ -49,7 +49,7 @@ begin
   end if;
   return new;
 end;
-$$ language plpgsql;
+$fn$ language plpgsql;
 
 drop trigger if exists journeys_legacy_v2_prepare on journeys;
 
@@ -60,7 +60,7 @@ execute function prepare_legacy_journey_v2_fields();
 
 create or replace function record_legacy_journey_initial_version()
 returns trigger
-as $$
+as $fn$
 begin
   if new.current_version >= 1 then
     insert into journey_versions (
@@ -82,7 +82,7 @@ begin
   end if;
   return new;
 end;
-$$ language plpgsql;
+$fn$ language plpgsql;
 
 drop trigger if exists journeys_legacy_initial_version on journeys;
 
@@ -93,7 +93,7 @@ execute function record_legacy_journey_initial_version();
 
 create or replace function ensure_journey_patient_link()
 returns trigger
-as $$
+as $fn$
 declare
   existing_patient_id text;
 begin
@@ -135,7 +135,7 @@ begin
 
   return new;
 end;
-$$ language plpgsql;
+$fn$ language plpgsql;
 
 drop trigger if exists journeys_patient_link_guard on journeys;
 
@@ -146,7 +146,7 @@ execute function ensure_journey_patient_link();
 
 create or replace function sync_patient_from_legacy_journey()
 returns trigger
-as $$
+as $fn$
 begin
   update patients
   set doctor_user_id = coalesce(new.doctor_user_id, doctor_user_id),
@@ -157,7 +157,7 @@ begin
 
   return new;
 end;
-$$ language plpgsql;
+$fn$ language plpgsql;
 
 drop trigger if exists journeys_patient_sync on journeys;
 
