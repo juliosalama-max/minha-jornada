@@ -1,15 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql, type Sql } from "@/lib/db";
-import {
-  DEFAULT_CONSULTS,
-  DEFAULT_NUTRITION,
-  DEFAULT_TASKS,
-} from "@/lib/constants";
 import type {
   DayLog,
   DoctorNotice,
   JournalSnapshot,
+  JourneyActionProgress,
   JourneyAnswerValue,
   JourneyMeta,
   JourneyModule,
@@ -191,13 +187,14 @@ function emptySnapshot(): JournalSnapshot {
       injectionWeekday: null,
       dose: "",
     },
-    consults: DEFAULT_CONSULTS.map((c) => ({ ...c })),
-    nutrition: DEFAULT_NUTRITION.map((c) => ({ ...c })),
-    tasks: DEFAULT_TASKS.map((t) => ({ ...t, meta: t.meta ? { ...t.meta } : undefined })),
+    consults: [],
+    nutrition: [],
+    tasks: [],
     days: {},
     monthNotes: {},
     plan: emptyPlan(),
     journeyPlan: emptyJourneyPlan(),
+    publishedJourneyPlan: emptyJourneyPlan(),
     journeyMeta: {
       status: "draft",
       currentVersion: 0,
@@ -205,6 +202,7 @@ function emptySnapshot(): JournalSnapshot {
       draftUpdatedAt: null,
     },
     journeyResponses: [],
+    journeyActionProgress: [],
   };
 }
 
@@ -247,6 +245,27 @@ async function loadSnapshot(
     where journey_id = ${journey.id}
     order by occurred_on desc, created_at desc
   `;
+  const progressRows = await sql<{
+    action_type: "task" | "exam";
+    action_id: string;
+    status: "pending" | "scheduled" | "completed" | "cancelled";
+    scheduled_date: string | null;
+    note: string;
+    completed_at: string | null;
+    updated_at: string;
+  }>`
+    select
+      action_type,
+      action_id,
+      status,
+      scheduled_date::text,
+      note,
+      completed_at::text,
+      updated_at::text
+    from journey_action_progress
+    where journey_id = ${journey.id}
+    order by updated_at desc
+  `;
   const days: Record<string, DayLog> = {};
   for (const r of dayRows) days[r.day] = parseJson<DayLog>(r.log, {});
   const monthNotes: Record<string, MonthNotes> = {};
@@ -259,12 +278,24 @@ async function loadSnapshot(
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));
+  const journeyActionProgress: JourneyActionProgress[] = progressRows.map((row) => ({
+    actionType: row.action_type,
+    actionId: row.action_id,
+    status: row.status,
+    scheduledDate: row.scheduled_date ?? "",
+    note: row.note,
+    completedAt: row.completed_at,
+    updatedAt: row.updated_at,
+  }));
 
-  const source =
+  const publishedJourneyPlan = parseJourneyPlan(
+    journey.published_plan || journey.plan,
+    journey.plan,
+  );
+  const journeyPlan =
     view === "doctor"
-      ? journey.draft_plan || journey.plan
-      : journey.published_plan || journey.plan;
-  const journeyPlan = parseJourneyPlan(source, journey.plan);
+      ? parseJourneyPlan(journey.draft_plan || journey.plan, journey.plan)
+      : publishedJourneyPlan;
 
   return {
     onboarded: Boolean(journey.onboarded),
@@ -276,8 +307,10 @@ async function loadSnapshot(
     monthNotes,
     plan: journeyPlan.legacy,
     journeyPlan,
+    publishedJourneyPlan,
     journeyMeta: journeyMeta(journey),
     journeyResponses,
+    journeyActionProgress,
   };
 }
 
@@ -611,9 +644,25 @@ export const createDoctorPlan = createServerFn({ method: "POST" })
     if (!name) throw new Error("Informe o nome do paciente.");
     const seed = emptySnapshot();
     const first = data.firstConsultDate ?? "";
-    const consults = seed.consults.map((c, i) =>
-      i === 0 && first ? { ...c, date: first } : { ...c },
-    );
+    const initialJourneyPlan: JourneyPlanV2 = first
+      ? {
+          ...seed.journeyPlan,
+          startDate: first,
+          appointments: [
+            {
+              id: crypto.randomUUID(),
+              type: "doctor",
+              professional: "",
+              date: first,
+              offsetDays: null,
+              mode: "unspecified",
+              notes: "Consulta inicial",
+              status: "scheduled",
+              visibleToPatient: true,
+            },
+          ],
+        }
+      : seed.journeyPlan;
     for (let i = 0; i < 8; i++) {
       const id = crypto.randomUUID();
       const invite = makeInviteCode();
@@ -626,12 +675,12 @@ export const createDoctorPlan = createServerFn({ method: "POST" })
           ) values (
             ${id}, null, ${context.userId}, ${invite}, false, ${name},
             ${first}, null, '',
-            ${JSON.stringify(consults)},
+            ${JSON.stringify(seed.consults)},
             ${JSON.stringify(seed.nutrition)},
             ${JSON.stringify(seed.tasks)},
             ${JSON.stringify(seed.plan)},
             'draft',
-            ${JSON.stringify(seed.journeyPlan)},
+            ${JSON.stringify(initialJourneyPlan)},
             '{}',
             0,
             now()
@@ -1062,6 +1111,137 @@ export const saveJourneyResponse = createServerFn({ method: "POST" })
       occurredOn: row.occurred_on,
       answers: parseJson<Record<string, JourneyAnswerValue>>(row.answers, {}),
       createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  });
+
+export const updateJourneyActionProgress = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    (data: {
+      actionType: "task" | "exam";
+      actionId: string;
+      status: "pending" | "scheduled" | "completed";
+      scheduledDate?: string;
+      note?: string;
+    }) => data,
+  )
+  .handler(async ({ context, data }): Promise<JourneyActionProgress> => {
+    const sql = await getSql();
+    const journey = await resolvePatientJourney(sql, context.userId);
+    const published = parseJourneyPlan(journey.published_plan, journey.plan);
+
+    const task =
+      data.actionType === "task"
+        ? published.tasks.find(
+            (item) => item.id === data.actionId && item.visibleToPatient,
+          )
+        : undefined;
+    const exam =
+      data.actionType === "exam"
+        ? published.exams.find(
+            (item) => item.id === data.actionId && item.visibleToPatient,
+          )
+        : undefined;
+
+    if (!task && !exam) {
+      throw new Error("Esta ação não faz parte da Jornada publicada.");
+    }
+
+    if (data.actionType === "task" && data.status === "scheduled") {
+      throw new Error("Tarefas só podem ser marcadas como pendentes ou concluídas.");
+    }
+    if (task && task.responsible !== "patient") {
+      throw new Error("Esta tarefa não é de responsabilidade do paciente.");
+    }
+
+    const scheduledDate = String(data.scheduledDate ?? "");
+    if (data.status === "scheduled" && !scheduledDate) {
+      throw new Error("Informe a data do agendamento.");
+    }
+    if (
+      scheduledDate &&
+      !/^\d{4}-\d{2}-\d{2}$/.test(scheduledDate)
+    ) {
+      throw new Error("Data agendada inválida.");
+    }
+
+    const note = String(data.note ?? "").slice(0, 1000);
+    const completedAt = data.status === "completed" ? new Date().toISOString() : null;
+
+    await sql`
+      insert into journey_action_progress (
+        journey_id,
+        action_type,
+        action_id,
+        status,
+        scheduled_date,
+        note,
+        completed_at,
+        updated_by_user_id,
+        updated_at
+      ) values (
+        ${journey.id},
+        ${data.actionType},
+        ${data.actionId},
+        ${data.status},
+        ${scheduledDate || null},
+        ${note},
+        ${completedAt},
+        ${context.userId},
+        now()
+      )
+      on conflict (journey_id, action_type, action_id)
+      do update set
+        status = excluded.status,
+        scheduled_date = excluded.scheduled_date,
+        note = excluded.note,
+        completed_at = excluded.completed_at,
+        updated_by_user_id = excluded.updated_by_user_id,
+        updated_at = now()
+    `;
+
+    const rows = await sql<{
+      action_type: "task" | "exam";
+      action_id: string;
+      status: "pending" | "scheduled" | "completed" | "cancelled";
+      scheduled_date: string | null;
+      note: string;
+      completed_at: string | null;
+      updated_at: string;
+    }>`
+      select
+        action_type,
+        action_id,
+        status,
+        scheduled_date::text,
+        note,
+        completed_at::text,
+        updated_at::text
+      from journey_action_progress
+      where journey_id = ${journey.id}
+        and action_type = ${data.actionType}
+        and action_id = ${data.actionId}
+    `;
+    const row = rows[0]!;
+    const label = task?.title ?? exam?.title ?? "ação";
+    await notifyDoctor(
+      sql,
+      journey,
+      data.status === "completed"
+        ? `concluiu: ${label}`
+        : data.status === "scheduled"
+          ? `informou agendamento: ${label}`
+          : `reabriu: ${label}`,
+    );
+
+    return {
+      actionType: row.action_type,
+      actionId: row.action_id,
+      status: row.status,
+      scheduledDate: row.scheduled_date ?? "",
+      note: row.note,
+      completedAt: row.completed_at,
       updatedAt: row.updated_at,
     };
   });

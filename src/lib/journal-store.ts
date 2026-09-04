@@ -23,6 +23,7 @@ import {
   saveProfile,
   saveTasks,
   updatePatientTask,
+  updateJourneyActionProgress,
   type Bootstrap,
 } from "./journal-api";
 import { emptyPlan } from "./plan-templates";
@@ -30,6 +31,7 @@ import { emptyJourneyPlan } from "./journey-plan";
 import type {
   DayLog,
   JournalSnapshot,
+  JourneyActionProgress,
   JourneyPlanV2,
   JourneyAnswerValue,
   JourneyModuleResponse,
@@ -60,6 +62,7 @@ const seed = (): JournalSnapshot => ({
   monthNotes: {},
   plan: emptyPlan(),
   journeyPlan: emptyJourneyPlan(),
+  publishedJourneyPlan: emptyJourneyPlan(),
   journeyMeta: {
     status: "draft",
     currentVersion: 0,
@@ -67,6 +70,7 @@ const seed = (): JournalSnapshot => ({
     draftUpdatedAt: null,
   },
   journeyResponses: [],
+  journeyActionProgress: [],
 });
 
 type JournalState = JournalSnapshot & {
@@ -101,6 +105,12 @@ type JournalState = JournalSnapshot & {
     occurredOn: string,
     answers: Record<string, JourneyAnswerValue>,
   ) => Promise<JourneyModuleResponse>;
+  updateActionProgress: (
+    actionType: "task" | "exam",
+    actionId: string,
+    status: "pending" | "scheduled" | "completed",
+    patch?: { scheduledDate?: string; note?: string },
+  ) => Promise<JourneyActionProgress>;
   setTasksList: (tasks: Task[]) => void;
   toggleTask: (id: string) => void;
   updateTaskMeta: (id: string, meta: TaskMeta) => void;
@@ -122,6 +132,7 @@ function applySnapshot(s: JournalSnapshot) {
     monthNotes: s.monthNotes,
     plan: s.plan ?? emptyPlan(),
     journeyPlan: s.journeyPlan ?? emptyJourneyPlan(),
+    publishedJourneyPlan: s.publishedJourneyPlan ?? s.journeyPlan ?? emptyJourneyPlan(),
     journeyMeta: s.journeyMeta ?? {
       status: "draft",
       currentVersion: 0,
@@ -129,6 +140,7 @@ function applySnapshot(s: JournalSnapshot) {
       draftUpdatedAt: null,
     },
     journeyResponses: s.journeyResponses ?? [],
+    journeyActionProgress: s.journeyActionProgress ?? [],
   };
 }
 
@@ -332,6 +344,27 @@ export const useJournal = create<JournalState>((set, get) => ({
       ],
     }));
     return response;
+  },
+  updateActionProgress: async (actionType, actionId, status, patch = {}) => {
+    const progress = await updateJourneyActionProgress({
+      data: {
+        actionType,
+        actionId,
+        status,
+        scheduledDate: patch.scheduledDate,
+        note: patch.note,
+      },
+    });
+    set((s) => ({
+      journeyActionProgress: [
+        progress,
+        ...s.journeyActionProgress.filter(
+          (item) =>
+            !(item.actionType === actionType && item.actionId === actionId),
+        ),
+      ],
+    }));
+    return progress;
   },
   setTasksList: (tasks) => {
     set({ tasks });

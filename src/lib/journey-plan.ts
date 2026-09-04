@@ -1,11 +1,14 @@
 import { emptyPlan, normalizePlan } from "./plan-templates";
 import type {
+  JourneyAppointment,
+  JourneyExam,
   JourneyFrequency,
   JourneyModule,
   JourneyModuleType,
   JourneyPlanV2,
   JourneyPriority,
   JourneyQuestion,
+  JourneyTask,
   PlanConfig,
 } from "./types";
 
@@ -45,6 +48,9 @@ export function emptyJourneyPlan(): JourneyPlanV2 {
     objective: "",
     priorities: [],
     modules: [],
+    tasks: [],
+    exams: [],
+    appointments: [],
     legacy: emptyPlan(),
   };
 }
@@ -99,6 +105,50 @@ function normalizeModule(raw: Partial<JourneyModule>, index: number): JourneyMod
     reviewDate: String(raw.reviewDate ?? ""),
     required: Boolean(raw.required),
     questions: (raw.questions ?? []).map(normalizeQuestion),
+  };
+}
+
+function normalizeTask(raw: Partial<JourneyTask>, index: number): JourneyTask {
+  return {
+    id: String(raw.id || `task-${index + 1}`),
+    title: String(raw.title ?? ""),
+    description: String(raw.description ?? ""),
+    category: raw.category ?? "other",
+    responsible: raw.responsible ?? "patient",
+    dueDate: String(raw.dueDate ?? ""),
+    priority: raw.priority === "important" ? "important" : "normal",
+    visibleToPatient: raw.visibleToPatient !== false,
+  };
+}
+
+function normalizeExam(raw: Partial<JourneyExam>, index: number): JourneyExam {
+  return {
+    id: String(raw.id || `exam-${index + 1}`),
+    title: String(raw.title ?? ""),
+    instructions: String(raw.instructions ?? ""),
+    requestedDate: String(raw.requestedDate ?? ""),
+    dueDate: String(raw.dueDate ?? ""),
+    visibleToPatient: raw.visibleToPatient !== false,
+  };
+}
+
+function normalizeAppointment(
+  raw: Partial<JourneyAppointment>,
+  index: number,
+): JourneyAppointment {
+  return {
+    id: String(raw.id || `appointment-${index + 1}`),
+    type: raw.type ?? "doctor",
+    professional: String(raw.professional ?? ""),
+    date: String(raw.date ?? ""),
+    offsetDays:
+      raw.offsetDays == null || !Number.isFinite(Number(raw.offsetDays))
+        ? null
+        : Math.max(0, Math.min(3650, Number(raw.offsetDays))),
+    mode: raw.mode ?? "unspecified",
+    notes: String(raw.notes ?? ""),
+    status: raw.status ?? "planned",
+    visibleToPatient: raw.visibleToPatient !== false,
   };
 }
 
@@ -172,6 +222,9 @@ export function normalizeJourneyPlan(raw: unknown): JourneyPlanV2 {
     objective: String(candidate.objective ?? ""),
     priorities: (candidate.priorities ?? []).slice(0, 3).map(normalizePriority),
     modules: (candidate.modules ?? []).map(normalizeModule),
+    tasks: (candidate.tasks ?? []).map(normalizeTask),
+    exams: (candidate.exams ?? []).map(normalizeExam),
+    appointments: (candidate.appointments ?? []).map(normalizeAppointment),
     legacy,
   };
 }
